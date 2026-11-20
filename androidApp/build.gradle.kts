@@ -12,8 +12,8 @@ android {
         applicationId = "br.archplayer"
         minSdk = 24
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.2.2"
+        versionCode = 6
+        versionName = "1.2.3"
     }
 
     signingConfigs {
@@ -51,8 +51,6 @@ android {
 
 dependencies {
     implementation(project(":shared"))
-    implementation("io.ktor:ktor-client-core:2.3.12")
-    implementation("io.ktor:ktor-client-cio:2.3.12")
 
     implementation(platform("androidx.compose:compose-bom:2024.10.01"))
     implementation("androidx.compose.ui:ui")

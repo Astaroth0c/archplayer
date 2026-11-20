@@ -1,30 +1,45 @@
 package br.archplayer.core.xciptv
 
-import io.ktor.client.HttpClient
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+
+@Serializable
+private data class HandshakeDto(
+    val user_info: XtreamUserInfo? = null,
+    val server_info: XtreamServerInfo? = null
+)
+
+@Serializable
+private data class CategoriesDto(
+    val category_id: String? = null,
+    val category_name: String? = null,
+    val parent_id: Int? = null
+)
+
 class XtreamClient(
-    private val credentials: XtreamCredentials,
-    private val http: HttpClient = HttpClient(),
-    private val usernameTag: String = "username",
-    private val passwordTag: String = "password"
+    private val credentials: XtreamCredentials
 ) {
 
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
         coerceInputValues = true
+        explicitNulls = false
     }
 
-    private fun baseUrl(): String {
+    fun baseUrl(): String {
         val host = credentials.host.trim().trimEnd('/')
         return if (host.startsWith("http")) host else "http://$host"
     }
 
     suspend fun handshake(): XtreamHandshake =
-        decode("player_api.php")
+        requestJson(nullable = false) { XtreamHandshake(it.user_info, it.server_info) }
 
     fun streamUrl(kind: XtreamStreamKind, id: Int, container: String? = null): String {
         val ext = container?.removePrefix(".")?.let { ".$it" } ?: ""
@@ -51,71 +66,108 @@ class XtreamClient(
     }
 
     suspend fun liveCategories(): List<XtreamCategory> =
-        decode("get_live_categories")
+        categoryList { liveCategoriesRequest() }
 
     suspend fun vodCategories(): List<XtreamCategory> =
-        decode("get_vod_categories")
+        categoryList { vodCategoriesRequest() }
 
     suspend fun seriesCategories(): List<XtreamCategory> =
-        decode("get_series_categories")
+        categoryList { seriesCategoriesRequest() }
 
     suspend fun liveStreams(categoryId: String? = null): List<XtreamLiveStream> =
-        decodeList("get_live_streams", "category_id", categoryId)
+        withContext(Dispatchers.IO) {
+            val text = fetch("get_live_streams", "category_id", categoryId)
+            json.decodeFromString<List<XtreamLiveStream>>(jsonArrayOrEmpty(text))
+        }
 
     suspend fun vodStreams(categoryId: String? = null): List<XtreamVodStream> =
-        decodeList("get_vod_streams", "category_id", categoryId)
+        withContext(Dispatchers.IO) {
+            val text = fetch("get_vod_streams", "category_id", categoryId)
+            json.decodeFromString<List<XtreamVodStream>>(jsonArrayOrEmpty(text))
+        }
 
     suspend fun series(categoryId: String? = null): List<XtreamSeries> =
-        decodeList("get_series", "category_id", categoryId)
+        withContext(Dispatchers.IO) {
+            val text = fetch("get_series", "category_id", categoryId)
+            json.decodeFromString<List<XtreamSeries>>(jsonArrayOrEmpty(text))
+        }
 
     suspend fun seriesInfo(seriesId: Int): XtreamSeriesInfo =
-        decode("get_series_info", "series_id", seriesId.toString())
+        withContext(Dispatchers.IO) {
+            val text = fetch("get_series_info", "series_id", seriesId.toString())
+            json.decodeFromString<XtreamSeriesInfo>(jsonObjectOrEmpty(text))
+        }
 
     suspend fun vodInfo(vodId: Int): XtreamVodInfo =
-        decode("get_vod_info", "vod_id", vodId.toString())
-
-    suspend fun rawText(action: String, categoryId: String? = null): String =
-        fetch(action, "category_id", categoryId).bodyAsText()
-
-    private suspend inline fun <reified T> decode(action: String, extraKey: String? = null, extraValue: String? = null): T =
-        decodeBody(json, fetch(action, extraKey, extraValue).bodyAsText())
-
-    private suspend inline fun <reified T> decodeList(action: String, extraKey: String?, extraValue: String?): List<T> =
-        decodeBodyList(json, fetch(action, extraKey, extraValue).bodyAsText())
-
-    private suspend fun fetch(action: String, extraKey: String?, extraValue: String?) : io.ktor.client.statement.HttpResponse {
-        val builder = StringBuilder(baseUrl())
-            .append("/player_api.php?")
-            .append(usernameTag).append("=").append(urlEncode(credentials.username))
-            .append("&").append(passwordTag).append("=").append(urlEncode(credentials.password))
-        if (action != "player_api.php") builder.append("&action=").append(urlEncode(action))
-        if (extraKey != null && !extraValue.isNullOrBlank()) {
-            builder.append("&").append(urlEncode(extraKey)).append("=").append(urlEncode(extraValue))
+        withContext(Dispatchers.IO) {
+            val text = fetch("get_vod_info", "vod_id", vodId.toString())
+            json.decodeFromString<XtreamVodInfo>(jsonObjectOrEmpty(text))
         }
-        return http.get(builder.toString()) {
-            header("User-Agent", USER_AGENT)
+
+    private suspend fun liveCategoriesRequest(): String = fetch("get_live_categories", null, null)
+    private suspend fun vodCategoriesRequest(): String = fetch("get_vod_categories", null, null)
+    private suspend fun seriesCategoriesRequest(): String = fetch("get_series_categories", null, null)
+
+    private suspend fun categoryList(fetcher: suspend () -> String): List<XtreamCategory> =
+        withContext(Dispatchers.IO) {
+            val text = fetcher()
+            json.decodeFromString<List<CategoriesDto>>(jsonArrayOrEmpty(text)).mapNotNull { dto ->
+                val id = dto.category_id ?: return@mapNotNull null
+                XtreamCategory(categoryId = id, categoryName = dto.category_name ?: id, parentId = dto.parent_id)
+            }
+        }
+
+    private suspend fun <T> requestJson(nullable: Boolean, map: (HandshakeDto) -> T): T {
+        val text = withContext(Dispatchers.IO) { fetch("player_api.php", null, null) }
+        val dto = runCatching { json.decodeFromString<HandshakeDto>(text.trim()) }
+            .getOrElse { throw IllegalStateException("Resposta invalida do portal (${it.message ?: "erro"})") }
+        return map(dto)
+    }
+
+    private fun fetch(action: String, extraKey: String?, extraValue: String?): String {
+        val url = StringBuilder(baseUrl())
+            .append("/player_api.php?")
+            .append("username=").append(urlEncode(credentials.username))
+            .append("&password=").append(urlEncode(credentials.password))
+        if (action != "player_api.php") url.append("&action=").append(urlEncode(action))
+        if (extraKey != null && !extraValue.isNullOrBlank()) {
+            url.append("&").append(urlEncode(extraKey)).append("=").append(urlEncode(extraValue))
+        }
+        val connection = URL(url.toString()).openConnection() as HttpURLConnection
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 30_000
+        connection.instanceFollowRedirects = true
+        connection.setRequestProperty("User-Agent", USER_AGENT)
+        try {
+            val code = connection.responseCode
+            if (code < 200 || code >= 300) {
+                throw IllegalStateException("Portal respondeu HTTP $code")
+            }
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            return stream?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
+        } catch (e: IllegalStateException) {
+            throw e
+        } catch (e: Exception) {
+            throw IllegalStateException("Falha de conexao com o portal: ${e.message ?: e.javaClass.simpleName}")
+        } finally {
+            connection.disconnect()
         }
     }
 
-    private fun urlEncode(value: String): String =
-        java.net.URLEncoder.encode(value, "UTF-8")
+    private fun urlEncode(value: String): String = URLEncoder.encode(value, "UTF-8")
 
     companion object {
         const val USER_AGENT = "ArchPlayer/1.0"
-    }
-}
 
-internal inline fun <reified T> decodeBody(json: Json, text: String): T =
-    json.decodeFromString(text.trim())
+        fun jsonArrayOrEmpty(text: String): String {
+            val t = text.trim()
+            return if (t.startsWith("[")) t else "[]"
+        }
 
-internal inline fun <reified T> decodeBodyList(json: Json, text: String): List<T> {
-    val trimmed = text.trim()
-    val body = if (trimmed.startsWith("[") || trimmed.startsWith("{")) trimmed
-        else "[]"
-    return try {
-        json.decodeFromString(body)
-    } catch (e: kotlinx.serialization.SerializationException) {
-        json.decodeFromString("[]")
+        fun jsonObjectOrEmpty(text: String): String {
+            val t = text.trim()
+            return if (t.startsWith("{")) t else "{}"
+        }
     }
 }
 

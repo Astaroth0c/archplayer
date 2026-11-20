@@ -207,7 +207,7 @@ fun MoviesScreen(client: XtreamClient, onPlay: (String, String?) -> Unit) {
                             }
                         }
                         it.plot?.let { p -> Text(p.take(500), style = MaterialTheme.typography.bodySmall, maxLines = 6, overflow = TextOverflow.Ellipsis) }
-                        it.cast?.let { c -> Text("Elenco: ${c.take(150)}", style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                        it.castRaw?.let { c -> Text("Elenco: ${c.take(150)}", style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                     }
                 }
             }
