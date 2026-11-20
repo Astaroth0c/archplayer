@@ -16,3 +16,6 @@ local.properties
 *.wgt
 *.ipk
 *.apk
+
+# Release artifacts (vao para GitHub Releases)
+release/
