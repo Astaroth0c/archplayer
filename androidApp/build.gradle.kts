@@ -12,13 +12,26 @@ android {
         applicationId = "br.archplayer"
         minSdk = 24
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.2.1"
+        versionCode = 5
+        versionName = "1.2.2"
+    }
+
+    signingConfigs {
+        create("app") {
+            storeFile = file("archplayer.keystore")
+            storePassword = "ArchPlayer2024"
+            keyAlias = "archplayer"
+            keyPassword = "ArchPlayer2024"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("app")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("app")
         }
     }
 
