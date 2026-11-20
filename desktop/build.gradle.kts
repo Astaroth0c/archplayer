@@ -25,7 +25,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Exe, TargetFormat.Msi)
             packageName = "ArchPlayer"
-            packageVersion = "1.0.0"
+            packageVersion = "1.1.0"
             modules("java.naming", "java.management")
         }
     }
