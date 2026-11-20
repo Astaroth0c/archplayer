@@ -94,6 +94,7 @@ fun ArchPlayerApp() {
                     val creds = XtreamCredentials(host.trim(), user.trim(), pass.trim())
                     val client = XtreamClient(creds)
                     val hs = client.handshake()
+                    if (hs.userInfo?.auth == 0) error("Usuario ou senha invalidos.")
                     if (hs.userInfo == null) error("Portal nao respondeu. Verifique host, usuario e senha.")
                     client to hs
                 }
@@ -110,7 +111,7 @@ fun ArchPlayerApp() {
                 screen = Screen.Main
                 loadEpgAsync(client) { epgIndex = it }
             }.onFailure {
-                loginError = it.message ?: "Falha na conexao"
+                loginError = friendlyError(it)
             }
             loggingIn = false
         }
@@ -184,6 +185,11 @@ fun ArchPlayerApp() {
             )
         }
     }
+}
+
+private fun friendlyError(error: Throwable): String {
+    val msg = (error.message ?: "Falha na conexao").lineSequence().firstOrNull().orEmpty()
+    return if (msg.length > 140) msg.take(137) + "..." else msg
 }
 
 private fun loadEpgAsync(client: XtreamClient, onLoaded: (Map<String, List<XmltvProgramme>>) -> Unit) {

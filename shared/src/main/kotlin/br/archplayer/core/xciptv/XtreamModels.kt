@@ -13,6 +13,7 @@ data class XtreamCredentials(
 data class XtreamUserInfo(
     val username: String? = null,
     val status: String? = null,
+    val auth: Int? = null,
     val expDate: String? = null,
     val isTrial: String? = null,
     val activeConnections: String? = null,
