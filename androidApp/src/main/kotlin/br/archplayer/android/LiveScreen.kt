@@ -1,5 +1,6 @@
 package br.archplayer.android
 
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -61,6 +63,7 @@ fun LiveScreen(
     tvboxConfig: TvBoxConfig?,
     onPlay: (String, String?) -> Unit
 ) {
+    val context = LocalContext.current
     var categories by remember { mutableStateOf(listOf<XtreamCategory>()) }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     var channels by remember { mutableStateOf(listOf<XtreamLiveStream>()) }
@@ -186,7 +189,11 @@ fun LiveScreen(
                                 .fillMaxWidth()
                                 .clickable {
                                     val id = ch.streamId
-                                    if (id != null) onPlay(client.streamUrl(br.archplayer.core.xciptv.XtreamStreamKind.LIVE, id), null)
+                                    if (id == null) {
+                                        Toast.makeText(context, "Canal sem id de stream.", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        onPlay(client.streamUrl(br.archplayer.core.xciptv.XtreamStreamKind.LIVE, id, "m3u8"), null)
+                                    }
                                 }
                                 .padding(vertical = 10.dp, horizontal = 4.dp)
                         ) {

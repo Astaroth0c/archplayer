@@ -47,6 +47,7 @@ import br.archplayer.core.xciptv.XtreamClient
 import br.archplayer.core.xciptv.XtreamCredentials
 import br.archplayer.core.xciptv.XtreamUserInfo
 import br.archplayer.core.xmltv.XmltvParser
+import android.widget.Toast
 import br.archplayer.core.xmltv.XmltvProgramme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -79,7 +80,15 @@ fun ArchPlayerApp() {
     var loginError by remember { mutableStateOf("") }
     var epgIndex by remember { mutableStateOf<Map<String, List<XmltvProgramme>>>(emptyMap()) }
     var config by remember { mutableStateOf<TvBoxConfig?>(null) }
-    var playRequest by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+    val openPlayer: (String, String?) -> Unit = { url, ua ->
+        when {
+            url.isBlank() -> Toast.makeText(context, "Endereco de stream vazio.", Toast.LENGTH_LONG).show()
+            else -> runCatching { PlayerActivity.start(context, url, ua) }.onFailure {
+                Toast.makeText(context, "Erro ao abrir o player: ${it.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     fun doConnect(host: String, user: String, pass: String, save: Boolean) {
         if (host.isBlank() || user.isBlank() || pass.isBlank()) {
@@ -147,17 +156,6 @@ fun ArchPlayerApp() {
         }
     }
 
-    playRequest?.let { (url, ua) ->
-        if (url.isNotBlank()) {
-            LaunchedEffect(url) {
-                PlayerActivity.start(context, url, ua.ifBlank { null })
-                playRequest = null
-            }
-        } else {
-            playRequest = null
-        }
-    }
-
     when (screen) {
         Screen.Splash -> Splash()
         Screen.Login -> LoginScreen(
@@ -175,7 +173,7 @@ fun ArchPlayerApp() {
                 epgIndex = epgIndex,
                 config = config,
                 prefs = prefs,
-                onPlay = { url, ua -> playRequest = url to (ua ?: "") },
+                onPlay = openPlayer,
                 onConfigLoaded = { config = it },
                 onLogout = {
                     prefs.edit().remove("xtream_host").remove("xtream_user").remove("xtream_pass").apply()
