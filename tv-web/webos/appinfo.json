@@ -1,0 +1,12 @@
+{
+  "id": "br.archplayer.webos",
+  "version": "1.0.0",
+  "vendor": "ArchPlayer",
+  "type": "web",
+  "main": "index.html",
+  "title": "ArchPlayer",
+  "icon": "icon80x80.png",
+  "largeIcon": "icon160x160.png",
+  "supportSize": ["1080"],
+  "background": "#0b0e13"
+}

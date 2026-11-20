@@ -1,0 +1,52 @@
+{
+  "spider": "./jar/pg.jar;md5;abcdef1234567890",
+  "wallpaper": "https://example.com/wall.jpg",
+  "flags": ["qq", "qiyi", "mgtv"],
+  "headers": { "User-Agent": "okhttp/4.9.3" },
+  "sites": [
+    {
+      "key": "cms_exemplo",
+      "name": "CMS Exemplo",
+      "type": 1,
+      "api": "https://cms.exemplo.com/api.php/provide/vod/?ac=list",
+      "searchable": "1",
+      "quickSearch": "1",
+      "filterable": "1",
+      "style": "{'type': 'rect', 'ratio': 1.335}"
+    },
+    {
+      "key": "csp_exemplo",
+      "name": "Spider Exemplo",
+      "type": 3,
+      "api": "csp_YSGG",
+      "ext": "https://exemplo.com/ext.json",
+      "searchable": "0"
+    }
+  ],
+  "parses": [
+    { "name": "Json Externo", "type": 2, "url": "https://parse.exemplo.com/?url=" },
+    { "name": "Sniffer Web", "type": 3, "url": "Web" }
+  ],
+  "lives": [
+    {
+      "name": "Xtream Portal",
+      "type": 0,
+      "url": "http://portal.exemplo.com:8080/get.php?username=USER&password=PASS&type=m3u_plus&output=ts",
+      "ua": "ArchPlayer/1.0",
+      "epg": "http://portal.exemplo.com:8080/xmltv.php?username=USER&password=PASS"
+    },
+    {
+      "name": "Grupo Inline",
+      "type": 1,
+      "channels": [
+        {
+          "group": "Nacional",
+          "channels": [
+            { "name": "Canal Um", "urls": ["http://live.exemplo.com/1.m3u8", "http://live.exemplo.com/1.ts"] }
+          ]
+        }
+      ]
+    }
+  ],
+  "doh": [{ "name": "Cloudflare", "url": "https://1.1.1.1/dns-query" }]
+}

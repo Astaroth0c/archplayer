@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1280, initial-scale=1" />
+  <title>ArchPlayer</title>
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div id="logo">Arch<span>Player</span></div>
+      <nav id="tabs">
+        <button class="tab" data-tab="live">TV ao vivo</button>
+        <button class="tab" data-tab="vod">Filmes</button>
+        <button class="tab" data-tab="series">Séries</button>
+        <button class="tab active" data-tab="config">Configurar</button>
+      </nav>
+    </header>
+
+    <main id="content">
+      <section id="tab-config" class="panel">
+        <h2>Fontes</h2>
+        <label>Interface TVBox (URL .json)
+          <input id="tvbox-url" type="url" placeholder="https://.../config.json" />
+        </label>
+        <button id="load-tvbox">Carregar interface</button>
+        <h2>Portal Xtream (estilo XCIPTV)</h2>
+        <label>Host <input id="x-host" type="url" placeholder="http://servidor:porta" /></label>
+        <label>Usuário <input id="x-user" type="text" /></label>
+        <label>Senha <input id="x-pass" type="password" /></label>
+        <button id="load-xtream">Conectar portal</button>
+        <p id="status"></p>
+      </section>
+
+      <section id="tab-live" class="panel hidden">
+        <aside id="live-groups" class="sidebar"></aside>
+        <div id="live-list" class="list"></div>
+      </section>
+
+      <section id="tab-vod" class="panel hidden">
+        <div id="vod-list" class="grid"></div>
+      </section>
+
+      <section id="tab-series" class="panel hidden">
+        <div id="series-list" class="grid"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="player-overlay" class="hidden">
+    <video id="player" controls playsinline></video>
+    <button id="close-player">Voltar</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/platform.js"></script>
+</body>
+</html>
