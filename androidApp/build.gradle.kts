@@ -46,8 +46,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.tv:tv-foundation:1.0.0-alpha11")
-    implementation("androidx.tv:tv-material:1.0.0-alpha11")
 
     val media3 = "1.4.1"
     implementation("androidx.media3:media3-exoplayer:$media3")
@@ -56,4 +54,5 @@ dependencies {
     implementation("androidx.media3:media3-ui:$media3")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 }

@@ -22,7 +22,7 @@ class XtreamClient(
     }
 
     suspend fun handshake(): XtreamHandshake =
-        http.get(playerApiUrl(null)).body()
+        get("player_api.php").body()
 
     fun streamUrl(kind: XtreamStreamKind, id: Int, container: String? = null): String {
         val ext = container?.removePrefix(".")?.let { ".$it" } ?: ""
