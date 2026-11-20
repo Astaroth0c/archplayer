@@ -165,6 +165,7 @@ fun ArchPlayerApp() {
             initialUser = prefs.getString("xtream_user", "") ?: "",
             error = loginError,
             loading = loggingIn,
+            version = UpdateManager.currentVersion(activity),
             onLogin = { host, user, pass -> doConnect(host, user, pass, true) }
         )
         Screen.Main -> {
@@ -188,6 +189,15 @@ fun ArchPlayerApp() {
 }
 
 private fun friendlyError(error: Throwable): String {
+    val cause = generateSequence(error as Throwable?) { it.cause }
+        .take(6)
+        .firstOrNull { it is java.net.UnknownHostException || it is java.net.ConnectException || it is java.net.SocketTimeoutException || it is javax.net.ssl.SSLException }
+    when (cause) {
+        is java.net.UnknownHostException -> return "Nao foi possivel resolver o endereco do portal. Verifique o host digitado e se o Wi-Fi/4G esta ativo."
+        is java.net.ConnectException -> return "O portal recusou a conexao. Tente outro endereco do servidor (ex.: http://x99.lat) ou outra rede."
+        is java.net.SocketTimeoutException -> return "O portal nao respondeu a tempo (timeout). Tente outra rede (Wi-Fi ou 4G) ou outro endereco do servidor."
+        is javax.net.ssl.SSLException -> return "Falha de SSL com o portal. Tente usar o endereco com http:// na frente."
+    }
     val msg = (error.message ?: "Falha na conexao").lineSequence().firstOrNull().orEmpty()
     return if (msg.length > 140) msg.take(137) + "..." else msg
 }

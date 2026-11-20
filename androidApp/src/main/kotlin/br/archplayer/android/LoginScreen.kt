@@ -41,6 +41,7 @@ fun LoginScreen(
     initialUser: String,
     error: String,
     loading: Boolean,
+    version: String,
     onLogin: (String, String, String) -> Unit
 ) {
     var host by remember { mutableStateOf(initialHost) }
@@ -121,6 +122,11 @@ fun LoginScreen(
             Text(
                 "Dica: o endereco do portal vem com seu plano IPTV (ex.: http://servidor:80).",
                 style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "Versao $version",
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

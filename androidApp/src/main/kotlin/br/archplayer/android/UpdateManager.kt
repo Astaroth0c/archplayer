@@ -55,7 +55,7 @@ object UpdateManager {
                 activity.runOnUiThread {
                     AlertDialog.Builder(activity)
                         .setTitle("Nova versao $latest")
-                        .setMessage("Voce esta usando $current. Instalar a atualizacao?")
+                        .setMessage("Voce esta usando $current. Instalar a atualizacao?\n\nSe aparecer 'App nao instalado' ou 'conflito de pacotes', desinstale o ArchPlayer antigo antes de instalar.")
                         .setPositiveButton("Atualizar agora") { _, _ -> install(activity, apkFile) }
                         .setNegativeButton("Depois", null)
                         .show()
