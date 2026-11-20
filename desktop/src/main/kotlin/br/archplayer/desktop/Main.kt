@@ -1,19 +1,33 @@
 package br.archplayer.desktop
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.Button
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.OutlinedTextField
-import androidx.compose.material.Text
-import androidx.compose.material.darkColors
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,83 +40,409 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import br.archplayer.core.tvbox.TvBoxConfigParser
+import br.archplayer.core.live.EpgLookup
+import br.archplayer.core.xciptv.XtreamCategory
+import br.archplayer.core.xciptv.XtreamClient
+import br.archplayer.core.xciptv.XtreamCredentials
+import br.archplayer.core.xciptv.XtreamStreamKind
+import br.archplayer.core.xmltv.XmltvParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.time.Duration
+import java.util.prefs.Preferences
+
+object DesktopPrefs {
+    private val node = Preferences.userNodeForPackage(DesktopPrefs::class.java)
+    fun get(key: String): String = node.get(key, "")
+    fun put(key: String, value: String) = node.put(key, value)
+    fun remove(key: String) = node.remove(key)
+}
+
+fun openExternal(url: String) {
+    val os = System.getProperty("os.name").lowercase()
+    val cmd: List<String> = when {
+        os.contains("win") -> listOf("cmd", "/c", "start", "", url)
+        os.contains("mac") -> listOf("open", url)
+        else -> listOf("xdg-open", url)
+    }
+    runCatching {
+        ProcessBuilder("mpv", "--fullscreen=no", url).start()
+        return
+    }
+    runCatching { ProcessBuilder(cmd).start() }
+}
+
+class DSession(val client: XtreamClient, val creds: XtreamCredentials, val status: String?, val expDate: String?)
 
 fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
         title = "ArchPlayer",
-        state = rememberWindowState(width = 1100.dp, height = 700.dp)
+        state = rememberWindowState(width = 1200.dp, height = 800.dp)
     ) {
-        MaterialTheme(colors = darkColors(background = Color(0xFF0B0E13))) {
-            DesktopHome()
+        MaterialTheme(
+            colorScheme = darkColorScheme(
+                primary = Color(0xFF4C8DFF),
+                background = Color(0xFF0B0E13),
+                surface = Color(0xFF11151F),
+                surfaceVariant = Color(0xFF1A2233),
+                onSurfaceVariant = Color(0xFF9AA7BD),
+                error = Color(0xFFFF6B6B)
+            )
+        ) {
+            DesktopApp()
+        }
+    }
+}
+
+private enum class DScreen { Splash, Login, Main }
+private enum class DTab(val label: String) { LIVE("TV ao vivo"), MOVIES("Filmes"), SERIES("Séries"), SETTINGS("Config") }
+
+@Composable
+fun DesktopApp() {
+    var screen by remember { mutableStateOf(DScreen.Splash) }
+    var session by remember { mutableStateOf<DSession?>(null) }
+    var loggingIn by remember { mutableStateOf(false) }
+    var loginError by remember { mutableStateOf("") }
+    var epgIndex by remember { mutableStateOf(emptyMap<String, List<br.archplayer.core.xmltv.XmltvProgramme>>()) }
+    val scope = rememberCoroutineScope()
+
+    fun doConnect(host: String, user: String, pass: String) {
+        if (host.isBlank() || user.isBlank() || pass.isBlank()) {
+            loginError = "Preencha host, usuario e senha."
+            return
+        }
+        loggingIn = true
+        loginError = ""
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val creds = XtreamCredentials(host.trim(), user.trim(), pass.trim())
+                    val client = XtreamClient(creds)
+                    val hs = client.handshake()
+                    if (hs.userInfo == null) error("Portal nao respondeu. Verifique host, usuario e senha.")
+                    client to hs
+                }
+            }
+            result.onSuccess { (client, hs) ->
+                session = DSession(client, XtreamCredentials(host.trim(), user.trim(), pass.trim()), hs.userInfo?.status, hs.userInfo?.expDate)
+                DesktopPrefs.put("xtream_host", host.trim())
+                DesktopPrefs.put("xtream_user", user.trim())
+                DesktopPrefs.put("xtream_pass", pass.trim())
+                screen = DScreen.Main
+                Thread {
+                    val idx = runCatching {
+                        EpgLookup.byChannelId(XmltvParser.parse(Fetch.fetch(client.epgUrl())))
+                    }.getOrNull() ?: emptyMap()
+                    if (idx.isNotEmpty()) epgIndex = idx
+                }.start()
+            }.onFailure {
+                loginError = it.message ?: "Falha na conexao"
+            }
+            loggingIn = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val h = DesktopPrefs.get("xtream_host")
+        val u = DesktopPrefs.get("xtream_user")
+        val p = DesktopPrefs.get("xtream_pass")
+        if (h.isBlank() || u.isBlank() || p.isBlank()) {
+            screen = DScreen.Login
+        } else {
+            doConnect(h, u, p)
+        }
+    }
+
+    when (screen) {
+        DScreen.Splash -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("ArchPlayer", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
+                CircularProgressIndicator()
+            }
+        }
+        DScreen.Login -> LoginUi(loginError, loggingIn, ::doConnect)
+        DScreen.Main -> {
+            val s = session
+            if (s == null) {
+                screen = DScreen.Login
+            } else {
+                DesktopShell(s, epgIndex, onLogout = {
+                    DesktopPrefs.remove("xtream_host"); DesktopPrefs.remove("xtream_user"); DesktopPrefs.remove("xtream_pass")
+                    session = null
+                    screen = DScreen.Login
+                })
+            }
+        }
+    }
+}
+
+private object Fetch {
+    fun fetch(url: String): String {
+        val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 30_000
+        connection.setRequestProperty("User-Agent", "ArchPlayer/1.0")
+        return connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+    }
+}
+
+@Composable
+private fun LoginUi(error: String, loading: Boolean, onLogin: (String, String, String) -> Unit) {
+    var host by remember { mutableStateOf(DesktopPrefs.get("xtream_host")) }
+    var user by remember { mutableStateOf(DesktopPrefs.get("xtream_user")) }
+    var pass by remember { mutableStateOf("") }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            modifier = Modifier.width(420.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("ArchPlayer", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
+            Text("Entre com seu portal IPTV (Xtream Codes)", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(host, { host = it }, label = { Text("Servidor (http://host:porta)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(user, { user = it }, label = { Text("Usuario") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(pass, { pass = it }, label = { Text("Senha") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            if (error.isNotEmpty()) Text(error, color = MaterialTheme.colorScheme.error)
+            Button(onClick = { onLogin(host, user, pass) }, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                Text(if (loading) "Conectando..." else "Entrar")
+            }
         }
     }
 }
 
 @Composable
-fun DesktopHome() {
-    var configUrl by remember { mutableStateOf("") }
-    var status by remember { mutableStateOf("") }
-    var siteNames by remember { mutableStateOf(listOf<String>()) }
-    val scope = rememberCoroutineScope()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text("ArchPlayer", style = MaterialTheme.typography.h4)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = configUrl,
-                onValueChange = { configUrl = it },
-                label = { Text("URL da interface (config TVBox)") },
-                modifier = Modifier.width(520.dp)
-            )
-            Button(onClick = {
-                scope.launch {
-                    status = "Carregando..."
-                    runCatching {
-                        val text = withContext(Dispatchers.IO) { fetchText(configUrl.trim()) }
-                        val config = TvBoxConfigParser().parse(text)
-                        siteNames = config.sites.map { it.name }
-                        status = "${config.sites.size} fontes - ${config.lives.size} listas ao vivo"
-                    }.onFailure {
-                        status = "Erro: ${it.message}"
-                    }
+private fun DesktopShell(session: DSession, epgIndex: Map<String, List<br.archplayer.core.xmltv.XmltvProgramme>>, onLogout: () -> Unit) {
+    var tab by remember { mutableStateOf(DTab.LIVE) }
+    Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Column(Modifier.width(200.dp).fillMaxHeight().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("ArchPlayer", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+            DTab.entries.forEach { item ->
+                if (tab == item) {
+                    Button(onClick = { tab = item }, modifier = Modifier.fillMaxWidth()) { Text(item.label) }
+                } else {
+                    OutlinedButton(onClick = { tab = item }, modifier = Modifier.fillMaxWidth()) { Text(item.label) }
                 }
-            }) {
-                Text("Carregar")
             }
+            Spacer(Modifier.size(24.dp))
+            OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text("Sair da conta") }
+            Text("mpv recomendado para playback.\nURL aberta no player padrao caso mpv nao esteja instalado.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(status)
-        LazyColumn {
-            items(siteNames) { name ->
-                Text(name, modifier = Modifier.padding(vertical = 2.dp))
+        Box(Modifier.weight(1f).fillMaxHeight().padding(12.dp)) {
+            when (tab) {
+                DTab.LIVE -> DesktopLive(session, epgIndex)
+                DTab.MOVIES -> DesktopVod(session)
+                DTab.SERIES -> DesktopSeries(session)
+                DTab.SETTINGS -> DesktopSettings(session)
             }
         }
     }
 }
 
-private val client = HttpClient.newBuilder()
-    .followRedirects(HttpClient.Redirect.NORMAL)
-    .connectTimeout(Duration.ofSeconds(10))
-    .build()
+@Composable
+private fun DesktopLive(session: DSession, epgIndex: Map<String, List<br.archplayer.core.xmltv.XmltvProgramme>>) {
+    val client = session.client
+    var categories by remember { mutableStateOf(listOf<XtreamCategory>()) }
+    var selected by remember { mutableStateOf<String?>(null) }
+    var streams by remember { mutableStateOf(listOf<br.archplayer.core.xciptv.XtreamLiveStream>()) }
+    var loading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
-internal fun fetchText(url: String): String {
-    val request = HttpRequest.newBuilder(URI.create(url))
-        .header("User-Agent", "ArchPlayer/1.0")
-        .GET()
-        .build()
-    return client.send(request, HttpResponse.BodyHandlers.ofString()).body()
+    fun load(categoryId: String?) {
+        loading = true
+        scope.launch {
+            streams = runCatching { withContext(Dispatchers.IO) { client.liveStreams(categoryId) } }.getOrDefault(emptyList())
+            loading = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loading = true
+        runCatching { withContext(Dispatchers.IO) { client.liveCategories() } }
+            .onSuccess { categories = it; load(it.firstOrNull()?.categoryId) }
+            .onFailure { loading = false }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            categories.forEach { cat ->
+                FilterChip(
+                    selected = selected == cat.categoryId,
+                    onClick = { selected = cat.categoryId; load(cat.categoryId) },
+                    label = { Text(cat.categoryName ?: "?") }
+                )
+            }
+        }
+        if (loading) CircularProgressIndicator(Modifier.size(24.dp))
+        LazyColumn {
+            items(streams, key = { it.streamId ?: it.num ?: 0 }) { ch ->
+                val name = ch.name ?: "Canal ${ch.streamId}"
+                val programmes = EpgLookup.findProgrammes(epgIndex, ch.epgChannelId, name)
+                val nowNext = EpgLookup.nowNext(programmes, System.currentTimeMillis() / 1000)
+                val nowSlot = nowNext.now
+                Column(
+                    Modifier.fillMaxWidth().clickable {
+                        ch.streamId?.let { id -> openExternal(client.streamUrl(XtreamStreamKind.LIVE, id)) }
+                    }.padding(vertical = 6.dp)
+                ) {
+                    Text(name, style = MaterialTheme.typography.bodyLarge)
+                    if (nowSlot != null) {
+                        Text("Agora: ${nowSlot.title}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopVod(session: DSession) {
+    val client = session.client
+    var categories by remember { mutableStateOf(listOf<XtreamCategory>()) }
+    var selected by remember { mutableStateOf<String?>(null) }
+    var streams by remember { mutableStateOf(listOf<br.archplayer.core.xciptv.XtreamVodStream>()) }
+    var loading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun load(categoryId: String?) {
+        loading = true
+        scope.launch {
+            streams = runCatching { withContext(Dispatchers.IO) { client.vodStreams(categoryId) } }.getOrDefault(emptyList())
+            loading = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loading = true
+        runCatching { withContext(Dispatchers.IO) { client.vodCategories() } }
+            .onSuccess { categories = it; load(it.firstOrNull()?.categoryId) }
+            .onFailure { loading = false }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            categories.take(20).forEach { cat ->
+                FilterChip(
+                    selected = selected == cat.categoryId,
+                    onClick = { selected = cat.categoryId; load(cat.categoryId) },
+                    label = { Text(cat.categoryName ?: "?") }
+                )
+            }
+        }
+        if (loading) CircularProgressIndicator(Modifier.size(24.dp))
+        LazyColumn {
+            items(streams, key = { it.streamId ?: it.num ?: 0 }) { movie ->
+                Row(
+                    Modifier.fillMaxWidth().clickable {
+                        movie.streamId?.let { id ->
+                            openExternal(client.streamUrl(XtreamStreamKind.VOD, id, movie.containerExtension))
+                        }
+                    }.padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(movie.name ?: "", style = MaterialTheme.typography.bodyLarge)
+                    movie.rating5Based?.takeIf { it > 0 }?.let {
+                        Text("%.1f".format(it), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopSeries(session: DSession) {
+    val client = session.client
+    var categories by remember { mutableStateOf(listOf<XtreamCategory>()) }
+    var selectedCat by remember { mutableStateOf<String?>(null) }
+    var series by remember { mutableStateOf(listOf<br.archplayer.core.xciptv.XtreamSeries>()) }
+    var chosen by remember { mutableStateOf<br.archplayer.core.xciptv.XtreamSeries?>(null) }
+    var info by remember { mutableStateOf<br.archplayer.core.xciptv.XtreamSeriesInfo?>(null) }
+    var loading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun load(categoryId: String?) {
+        loading = true
+        chosen = null
+        info = null
+        scope.launch {
+            series = runCatching { withContext(Dispatchers.IO) { client.series(categoryId) } }.getOrDefault(emptyList())
+            loading = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loading = true
+        runCatching { withContext(Dispatchers.IO) { client.seriesCategories() } }
+            .onSuccess { categories = it; load(it.firstOrNull()?.categoryId) }
+            .onFailure { loading = false }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            categories.take(20).forEach { cat ->
+                FilterChip(
+                    selected = selectedCat == cat.categoryId,
+                    onClick = { selectedCat = cat.categoryId; load(cat.categoryId) },
+                    label = { Text(cat.categoryName ?: "?") }
+                )
+            }
+        }
+        if (loading) CircularProgressIndicator(Modifier.size(24.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            LazyColumn(Modifier.width(320.dp)) {
+                items(series, key = { it.seriesId ?: 0 }) { entry ->
+                    Text(
+                        entry.name ?: "",
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            chosen = entry
+                            val id = entry.seriesId ?: return@clickable
+                            scope.launch {
+                                info = runCatching { withContext(Dispatchers.IO) { client.seriesInfo(id) } }.getOrNull()
+                            }
+                        }.padding(vertical = 6.dp),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+            }
+            chosen?.let { entry ->
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(entry.name ?: "Serie", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    info?.info?.plot?.let { Text(it.take(300), style = MaterialTheme.typography.bodySmall, maxLines = 4) }
+                    info?.episodes?.keys?.sortedBy { it.toIntOrNull() ?: 0 }?.forEach { season ->
+                        Text("Temporada $season", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                        info?.episodes?.get(season)?.forEach { ep ->
+                            Text(
+                                "E${ep.episodeNum ?: "?"} - ${ep.title ?: "Episodio"}",
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    ep.id?.toIntOrNull()?.let { id ->
+                                        openExternal(client.streamUrl(XtreamStreamKind.SERIES, id, ep.containerExtension))
+                                    }
+                                }.padding(vertical = 2.dp),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopSettings(session: DSession) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(8.dp)) {
+        Text("Conta", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Text("Servidor: ${session.creds.host}", style = MaterialTheme.typography.bodyMedium)
+        Text("Usuario: ${session.creds.username}", style = MaterialTheme.typography.bodyMedium)
+        session.status?.let { Text("Status: $it", style = MaterialTheme.typography.bodyMedium) }
+        session.expDate?.toLongOrNull()?.let {
+            Text("Expira em: ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm").format(java.util.Date(it * 1000))}", style = MaterialTheme.typography.bodyMedium)
+        }
+        Text(
+            "Reproducao: live/movie/series abrem no mpv (recomendado) ou no player padrao do sistema.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }

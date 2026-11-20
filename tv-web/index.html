@@ -7,43 +7,73 @@
   <link rel="stylesheet" href="css/app.css" />
 </head>
 <body>
-  <div id="app">
+  <div id="login-screen">
+    <div class="login-box">
+      <div id="login-logo">Arch<span>Player</span></div>
+      <p id="login-sub">Entre com seu portal IPTV (Xtream Codes)</p>
+      <label>Servidor (http://host:porta)
+        <input id="x-host" type="text" placeholder="http://servidor:80" />
+      </label>
+      <label>Usuário
+        <input id="x-user" type="text" />
+      </label>
+      <label>Senha
+        <input id="x-pass" type="password" />
+      </label>
+      <button id="btn-login">Entrar</button>
+      <p id="login-status"></p>
+    </div>
+  </div>
+
+  <div id="splash" class="hidden">
+    <div id="splash-logo">Arch<span>Player</span></div>
+    <p>Carregando portal...</p>
+  </div>
+
+  <div id="app" class="hidden">
     <header id="topbar">
       <div id="logo">Arch<span>Player</span></div>
       <nav id="tabs">
-        <button class="tab" data-tab="live">TV ao vivo</button>
+        <button class="tab active" data-tab="live">TV ao vivo</button>
         <button class="tab" data-tab="vod">Filmes</button>
         <button class="tab" data-tab="series">Séries</button>
-        <button class="tab active" data-tab="config">Configurar</button>
+        <button class="tab" data-tab="config">Configurar</button>
       </nav>
     </header>
 
     <main id="content">
-      <section id="tab-config" class="panel">
-        <h2>Fontes</h2>
-        <label>Interface TVBox (URL .json)
-          <input id="tvbox-url" type="url" placeholder="https://.../config.json" />
-        </label>
-        <button id="load-tvbox">Carregar interface</button>
-        <h2>Portal Xtream (estilo XCIPTV)</h2>
-        <label>Host <input id="x-host" type="url" placeholder="http://servidor:porta" /></label>
-        <label>Usuário <input id="x-user" type="text" /></label>
-        <label>Senha <input id="x-pass" type="password" /></label>
-        <button id="load-xtream">Conectar portal</button>
-        <p id="status"></p>
-      </section>
-
-      <section id="tab-live" class="panel hidden">
-        <aside id="live-groups" class="sidebar"></aside>
-        <div id="live-list" class="list"></div>
+      <section id="tab-live" class="panel">
+        <div id="live-categories"></div>
+        <div class="live-wrap">
+          <aside id="live-groups" class="sidebar"></aside>
+          <div id="live-list" class="list"></div>
+        </div>
       </section>
 
       <section id="tab-vod" class="panel hidden">
+        <div id="vod-categories"></div>
         <div id="vod-list" class="grid"></div>
       </section>
 
       <section id="tab-series" class="panel hidden">
-        <div id="series-list" class="grid"></div>
+        <div id="series-categories"></div>
+        <div id="series-wrap" class="split">
+          <div id="series-list" class="list"></div>
+          <div id="series-episodes" class="list hidden"></div>
+        </div>
+      </section>
+
+      <section id="tab-config" class="panel hidden">
+        <h2>Conta</h2>
+        <p id="account-info"></p>
+        <button id="btn-logout">Sair da conta</button>
+        <h2>Interface TVBox (opcional)</h2>
+        <label>Interface TVBox (URL .json)
+          <input id="tvbox-url" type="url" placeholder="https://.../config.json" />
+        </label>
+        <button id="load-tvbox">Carregar interface</button>
+        <p id="status"></p>
+        <p id="version">ArchPlayer web</p>
       </section>
     </main>
   </div>

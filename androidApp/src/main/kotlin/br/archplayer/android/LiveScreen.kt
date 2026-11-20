@@ -1,6 +1,5 @@
 package br.archplayer.android
 
-import android.content.SharedPreferences
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,15 +13,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,17 +31,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import br.archplayer.core.live.EpgLookup
-import br.archplayer.core.live.EpgNowNext
-import br.archplayer.core.live.LiveTxtParser
-import br.archplayer.core.m3u.M3uEntry
 import br.archplayer.core.m3u.M3uParser
 import br.archplayer.core.tvbox.TvBoxConfig
+import br.archplayer.core.xciptv.XtreamCategory
 import br.archplayer.core.xciptv.XtreamClient
-import br.archplayer.core.xciptv.XtreamCredentials
-import br.archplayer.core.xmltv.XmltvParser
+import br.archplayer.core.xciptv.XtreamLiveStream
 import br.archplayer.core.xmltv.XmltvProgramme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -51,205 +48,169 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private data class UiChannel(
+private data class LiveRow(
     val name: String,
-    val urls: List<String>,
+    val url: String,
     val tvgId: String? = null
 )
 
-private data class UiGroup(
-    val name: String,
-    val channels: List<UiChannel>
-)
-
-private fun m3uToGroups(entries: List<M3uEntry>): List<UiGroup> =
-    entries.groupBy { it.groupTitle ?: "Geral" }.map { (group, list) ->
-        UiGroup(group, list.map { UiChannel(it.name, listOf(it.url), it.tvgId) })
-    }
-
-private fun txtToGroups(text: String): List<UiGroup> =
-    LiveTxtParser().parse(text).map { group ->
-        UiGroup(group.name, group.channels.map { UiChannel(it.name, it.urls) })
-    }
-
 @Composable
 fun LiveScreen(
-    config: TvBoxConfig?,
-    prefs: SharedPreferences,
+    client: XtreamClient?,
+    epgIndex: Map<String, List<XmltvProgramme>>,
+    tvboxConfig: TvBoxConfig?,
     onPlay: (String, String?) -> Unit
 ) {
-    var groups by remember { mutableStateOf(listOf<UiGroup>()) }
-    var epgIndex by remember { mutableStateOf(emptyMap<String, List<XmltvProgramme>>()) }
+    var categories by remember { mutableStateOf(listOf<XtreamCategory>()) }
+    var selectedCategory by remember { mutableStateOf<String?>(null) }
+    var channels by remember { mutableStateOf(listOf<XtreamLiveStream>()) }
+    var tvBoxGroups by remember { mutableStateOf(listOf<Pair<String, List<LiveRow>>>()) }
     var selectedGroup by remember { mutableStateOf<String?>(null) }
-    var status by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
-    var configLoaded by remember { mutableStateOf(false) }
-    var showXtreamForm by remember { mutableStateOf(false) }
-    var xHost by remember { mutableStateOf(prefs.getString("xtream_host", "") ?: "") }
-    var xUser by remember { mutableStateOf(prefs.getString("xtream_user", "") ?: "") }
-    var xPass by remember { mutableStateOf(prefs.getString("xtream_pass", "") ?: "") }
+    var status by remember { mutableStateOf("") }
+    var portalLoaded by remember { mutableStateOf(false) }
+    var tvBoxLoaded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val fmt = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
 
-    suspend fun loadEpg(url: String) {
+    LaunchedEffect(client) {
+        if (client == null || portalLoaded) return@LaunchedEffect
+        portalLoaded = true
+        loading = true
+        status = "Carregando categorias..."
         runCatching {
-            withContext(Dispatchers.IO) { fetchText(url) }
-        }.onSuccess { xml ->
-            epgIndex = EpgLookup.byChannelId(XmltvParser.parse(xml))
-        }.onFailure {
-            status = "EPG indisponivel: ${it.message}"
-        }
-    }
-
-    fun connectXtream() {
-        if (xHost.isBlank() || xUser.isBlank() || xPass.isBlank()) {
-            status = "Preencha host, usuario e senha do portal."
-            return
-        }
-        prefs.edit()
-            .putString("xtream_host", xHost.trim())
-            .putString("xtream_user", xUser.trim())
-            .putString("xtream_pass", xPass.trim())
-            .apply()
-        loading = true
-        status = "Conectando ao portal..."
-        scope.launch {
-            val epgUrl = withContext(Dispatchers.IO) {
-                runCatching {
-                    val client = XtreamClient(
-                        XtreamCredentials(host = xHost.trim(), username = xUser.trim(), password = xPass.trim())
-                    )
-                    val info = client.handshake()
-                    if (info.userInfo == null) throw IllegalStateException("resposta invalida do portal")
-                    val streams = client.liveStreams()
-                    val base = xHost.trim().trimEnd('/')
-                    val chans = streams.map { s ->
-                        UiChannel(
-                            name = s.name ?: ("Canal ${s.streamId}"),
-                            urls = s.streamId?.let { id -> listOf("$base/live/${xUser.trim()}/${xPass.trim()}/$id.m3u8") } ?: emptyList(),
-                            tvgId = s.epgChannelId
-                        )
-                    }
-                    withContext(Dispatchers.Main) {
-                        groups = listOf(UiGroup("Portal Xtream", chans))
-                        selectedGroup = "Portal Xtream"
-                    }
-                    streams.size
-                }.getOrNull()
-                runCatching {
-                    val client = XtreamClient(
-                        XtreamCredentials(host = xHost.trim(), username = xUser.trim(), password = xPass.trim())
-                    )
-                    client.epgUrl()
-                }.getOrNull()
+            withContext(Dispatchers.IO) {
+                val cats = client.liveCategories()
+                val firstId = cats.firstOrNull()?.categoryId
+                val streams = client.liveStreams(firstId)
+                cats to streams
             }
-            if (epgUrl != null) loadEpg(epgUrl)
-            loading = false
+        }.onSuccess { (cats, streams) ->
+            categories = cats
+            selectedCategory = cats.firstOrNull()?.categoryId
+            channels = streams
+            status = "${channels.size} canais em ${cats.size} categorias"
+        }.onFailure {
+            status = "Erro ao carregar portal: ${it.message}"
         }
+        loading = false
     }
 
-    LaunchedEffect(config) {
-        if (config == null || configLoaded) return@LaunchedEffect
-        configLoaded = true
-        if (config.lives.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(client, tvboxConfig) {
+        if (client != null || tvBoxLoaded || tvboxConfig == null || tvboxConfig.lives.isEmpty()) return@LaunchedEffect
+        tvBoxLoaded = true
         loading = true
-        withContext(Dispatchers.IO) {
-            val result = ArrayList<UiGroup>()
-            config.lives.forEach { live ->
+        val loaded = withContext(Dispatchers.IO) {
+            val result = ArrayList<Pair<String, List<LiveRow>>>()
+            tvboxConfig.lives.forEach { live ->
                 if (live.type == 1 && live.groups.isNotEmpty()) {
                     live.groups.forEach { g ->
-                        result.add(UiGroup(g.group, g.channels.map { UiChannel(it.name, it.urls) }))
+                        result.add(g.group to g.channels.map { LiveRow(it.name, it.urls.firstOrNull() ?: "", null) })
                     }
-                } else if (live.url.isNotBlank() && live.url.startsWith("http")) {
-                    runCatching { fetchText(live.url) }.onSuccess { text ->
+                } else if (live.url.startsWith("http")) {
+                    runCatching {
+                        val text = fetchText(live.url)
                         val trimmed = text.trimStart()
-                        val parsed = if (trimmed.startsWith("#EXTM3U")) {
-                            m3uToGroups(M3uParser.parse(text).entries)
+                        if (trimmed.startsWith("#EXTM3U")) {
+                            val entries = M3uParser.parse(text).entries
+                            if (entries.isNotEmpty()) {
+                                entries.groupBy { it.groupTitle ?: "Geral" }.forEach { (g, list) ->
+                                    result.add(g to list.map { LiveRow(it.name, it.url, it.tvgId) })
+                                }
+                            }
                         } else {
-                            txtToGroups(text)
-                        }
-                        synchronized(result) { result.addAll(parsed) }
-                        live.epg?.takeIf { it.isNotBlank() }?.let { epg ->
+                            br.archplayer.core.live.LiveTxtParser().parse(text).forEach { group ->
+                                result.add(group.name to group.channels.map { LiveRow(it.name, it.urls.firstOrNull() ?: "", null) })
+                            }
                         }
                     }
                 }
             }
             result
-        }.let { loaded ->
-            if (loaded.isNotEmpty()) {
-                groups = loaded
-                selectedGroup = loaded.firstOrNull()?.name
-                status = "${loaded.sumOf { g -> g.channels.size }} canais carregados"
-            }
-            loading = false
         }
-        config.lives.firstOrNull { it.epg != null && it.epg!!.isNotBlank() }?.epg?.let { loadEpg(it) }
+        tvBoxGroups = loaded
+        selectedGroup = loaded.firstOrNull()?.first
+        status = if (loaded.isEmpty()) "Nenhum canal na interface TVBox"
+        else "${loaded.sumOf { it.second.size }} canais carregados"
+        loading = false
     }
 
     Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = { showXtreamForm = !showXtreamForm }) {
-                Text("Portal Xtream (XCIPTV)")
+        if (loading) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CircularProgressIndicator(Modifier.size(18.dp))
+                Text(status, style = MaterialTheme.typography.bodySmall)
             }
-            Spacer(Modifier.width(8.dp))
-            if (loading) CircularProgressIndicator(Modifier.size(20.dp))
+        } else if (status.isNotEmpty()) {
+            Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        if (showXtreamForm) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedTextField(value = xHost, onValueChange = { xHost = it }, label = { Text("Host (http://servidor:porta)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = xUser, onValueChange = { xUser = it }, label = { Text("Usuario") }, singleLine = true, modifier = Modifier.weight(1f))
-                    OutlinedTextField(value = xPass, onValueChange = { xPass = it }, label = { Text("Senha") }, singleLine = true, modifier = Modifier.weight(1f))
-                }
-                TextButton(onClick = { connectXtream() }) { Text("Conectar") }
-            }
-        }
-
-        if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodySmall)
-
-        if (groups.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Sem canais. Carregue uma interface com lives ou conecte um portal Xtream.")
-            }
-        } else {
-            Row(Modifier.fillMaxSize()) {
-                Column(
-                    Modifier.width(150.dp).fillMaxHeight().verticalScroll(rememberScrollState())
-                ) {
-                    groups.forEach { group ->
-                        TextButton(onClick = { selectedGroup = group.name }, modifier = Modifier.fillMaxWidth()) {
-                            Text(group.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
+        if (client != null) {
+            if (categories.isNotEmpty()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(categories, key = { it.categoryId ?: it.categoryName.orEmpty() }) { cat ->
+                        FilterChip(
+                            selected = selectedCategory == cat.categoryId,
+                            onClick = {
+                                selectedCategory = cat.categoryId
+                                loading = true
+                                channels = emptyList()
+                                scope.launch {
+                                    val streams = runCatching {
+                                        withContext(Dispatchers.IO) { client.liveStreams(cat.categoryId) }
+                                    }.getOrNull() ?: emptyList()
+                                    channels = streams
+                                    loading = false
+                                    status = if (streams.isEmpty()) "Categoria vazia" else "${streams.size} canais"
+                                }
+                            },
+                            label = { Text(cat.categoryName ?: "?", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        )
                     }
                 }
-                Spacer(Modifier.width(8.dp))
-                val channels = groups.firstOrNull { it.name == selectedGroup }?.channels ?: emptyList()
-                val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-                LazyColumn(Modifier.weight(1f)) {
-                    items(channels, key = { it.name + it.urls.firstOrNull().orEmpty() }) { channel ->
-                        val nowNext = nowNextFor(epgIndex, channel)
+            }
+            if (channels.isEmpty() && !loading) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Nenhum canal nesta categoria.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    itemsIndexed(channels, key = { _, ch -> ch.streamId ?: ch.num ?: ch.name.orEmpty().hashCode() }) { index, ch ->
+                        val name = ch.name ?: "Canal ${ch.streamId ?: index + 1}"
+                        val programmes = EpgLookup.findProgrammes(epgIndex, ch.epgChannelId, name)
+                        val nowNext = EpgLookup.nowNext(programmes, System.currentTimeMillis() / 1000)
+                        val nowSlot = nowNext.now
+                        val nextSlot = nowNext.next
                         Column(
                             Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    val url = channel.urls.firstOrNull() ?: return@clickable
-                                    onPlay(url, null)
+                                    val id = ch.streamId
+                                    if (id != null) onPlay(client.streamUrl(br.archplayer.core.xciptv.XtreamStreamKind.LIVE, id), null)
                                 }
-                                .padding(vertical = 8.dp, horizontal = 4.dp)
+                                .padding(vertical = 10.dp, horizontal = 4.dp)
                         ) {
-                            Text(channel.name, style = MaterialTheme.typography.bodyLarge)
-                            nowNext.now?.let { now ->
+                            Text(
+                                "${index + 1}. $name",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (nowSlot != null) {
                                 Text(
-                                    "Agora ${fmt.format(Date(now.start * 1000))} - ${now.title}",
+                                    "Agora: ${nowSlot.title} (${fmt.format(Date(nowSlot.start * 1000))})",
                                     style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            nowNext.next?.let { next ->
+                            if (nextSlot != null) {
                                 Text(
-                                    "Depois ${fmt.format(Date(next.start * 1000))} - ${next.title}",
+                                    "Depois: ${nextSlot.title} (${fmt.format(Date(nextSlot.start * 1000))})",
                                     style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -258,15 +219,51 @@ fun LiveScreen(
                     }
                 }
             }
+        } else {
+            Row(Modifier.fillMaxSize()) {
+                Column(
+                    Modifier.width(160.dp).fillMaxHeight().verticalScroll(rememberScrollState())
+                ) {
+                    tvBoxGroups.forEach { (group, _) ->
+                        FilterChip(
+                            selected = selectedGroup == group,
+                            onClick = { selectedGroup = group },
+                            label = {
+                                Text(
+                                    group,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.width(140.dp)
+                                )
+                            }
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                val shown = tvBoxGroups.firstOrNull { it.first == selectedGroup }?.second ?: emptyList()
+                LazyColumn(Modifier.weight(1f)) {
+                    itemsIndexed(shown, key = { i, ch -> "$i-${ch.name}" }) { _, ch ->
+                        val programmes = EpgLookup.findProgrammes(epgIndex, ch.tvgId, ch.name)
+                        val nowNext = EpgLookup.nowNext(programmes, System.currentTimeMillis() / 1000)
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { if (ch.url.isNotBlank()) onPlay(ch.url, null) }
+                                .padding(vertical = 10.dp, horizontal = 4.dp)
+                        ) {
+                            Text(ch.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            val nowSlotTv = nowNext.now
+                            Text(
+                                if (nowSlotTv != null) "Agora: ${nowSlotTv.title}" else "Sem EPG",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
-}
-
-private fun nowNextFor(
-    epgIndex: Map<String, List<XmltvProgramme>>,
-    channel: UiChannel
-): EpgNowNext {
-    if (epgIndex.isEmpty()) return EpgNowNext()
-    val programmes = EpgLookup.findProgrammes(epgIndex, channel.tvgId, channel.name)
-    return EpgLookup.nowNext(programmes, System.currentTimeMillis() / 1000)
 }
