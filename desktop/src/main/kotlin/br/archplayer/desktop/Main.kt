@@ -33,10 +33,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
@@ -58,16 +61,70 @@ object DesktopPrefs {
     fun remove(key: String) = node.remove(key)
 }
 
+const val APP_VERSION = "1.4.0"
+
+object UpdateCheck {
+    private const val API = "https://api.github.com/repos/Astaroth0c/archplayer/releases/latest"
+
+    fun latestVersion(): String? = runCatching {
+        val c = java.net.URL(API).openConnection() as java.net.HttpURLConnection
+        c.connectTimeout = 10_000
+        c.readTimeout = 15_000
+        c.setRequestProperty("User-Agent", "ArchPlayer/$APP_VERSION")
+        c.setRequestProperty("Accept", "application/vnd.github+json")
+        val body = c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+        Regex("\"tag_name\"\\s*:\\s*\"v?([^\"]+)\"").find(body)?.groupValues?.get(1).orEmpty()
+    }.getOrNull()?.takeIf { it.isNotEmpty() }
+
+    fun isNewer(candidate: String, current: String): Boolean {
+        val a = candidate.split(".").map { it.filter(Char::isDigit).toIntOrNull() ?: 0 }
+        val b = current.split(".").map { it.filter(Char::isDigit).toIntOrNull() ?: 0 }
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val ai = a.getOrElse(i) { 0 }
+            val bi = b.getOrElse(i) { 0 }
+            if (ai != bi) return ai > bi
+        }
+        return false
+    }
+
+    fun openDownloadPage() {
+        runCatching {
+            java.awt.Desktop.getDesktop().browse(java.net.URI("https://github.com/Astaroth0c/archplayer/releases/latest"))
+        }
+    }
+}
+
 fun openExternal(url: String) {
     val os = System.getProperty("os.name").lowercase()
-    val cmd: List<String> = when {
-        os.contains("win") -> listOf("cmd", "/c", "start", "", url)
-        os.contains("mac") -> listOf("open", url)
-        else -> listOf("xdg-open", url)
+    if (os.contains("win")) {
+        val candidates = listOf(
+            listOf("mpv", url),
+            listOf("C:\\Program Files\\mpv\\mpv.exe", url),
+            listOf("C:\\Program Files (x86)\\mpv\\mpv.exe", url),
+            listOf("C:\\Program Files\\VideoLAN\\VLC\\vlc.exe", url),
+            listOf("C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe", url),
+            listOf("C:\\Program Files\\Windows Media Player\\wmplayer.exe", url)
+        )
+        candidates.forEach { cmd ->
+            val path = cmd.first()
+            val found = path == "mpv" || java.io.File(path).exists()
+            if (found) {
+                runCatching {
+                    ProcessBuilder(cmd).start()
+                    return
+                }
+            }
+        }
+        runCatching { ProcessBuilder(listOf("cmd", "/c", "start", "", url)).start() }
+        return
     }
     runCatching {
-        ProcessBuilder("mpv", "--fullscreen=no", url).start()
+        ProcessBuilder(listOf("mpv", "--fullscreen=no", url)).start()
         return
+    }
+    val cmd = when {
+        os.contains("mac") -> listOf("open", url)
+        else -> listOf("xdg-open", url)
     }
     runCatching { ProcessBuilder(cmd).start() }
 }
@@ -105,7 +162,17 @@ fun DesktopApp() {
     var loggingIn by remember { mutableStateOf(false) }
     var loginError by remember { mutableStateOf("") }
     var epgIndex by remember { mutableStateOf(emptyMap<String, List<br.archplayer.core.xmltv.XmltvProgramme>>()) }
+    var updateVersion by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+
+    val checkUpdate: () -> Unit = {
+        Thread {
+            val latest = UpdateCheck.latestVersion()
+            if (latest != null && UpdateCheck.isNewer(latest, APP_VERSION)) {
+                updateVersion = latest
+            }
+        }.start()
+    }
 
     fun doConnect(host: String, user: String, pass: String) {
         if (host.isBlank() || user.isBlank() || pass.isBlank()) {
@@ -144,6 +211,13 @@ fun DesktopApp() {
     }
 
     LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            val latest = runCatching { UpdateCheck.latestVersion() }.getOrNull()
+            if (latest != null && UpdateCheck.isNewer(latest, APP_VERSION)) {
+                updateVersion = latest
+            }
+        }
+        kotlinx.coroutines.delay(1400)
         val h = DesktopPrefs.get("xtream_host")
         val u = DesktopPrefs.get("xtream_user")
         val p = DesktopPrefs.get("xtream_pass")
@@ -151,6 +225,22 @@ fun DesktopApp() {
             screen = DScreen.Login
         } else {
             doConnect(h, u, p)
+        }
+    }
+
+    if (updateVersion.isNotEmpty()) {
+        Dialog(onDismissRequest = { updateVersion = "" }) {
+            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface) {
+                Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Nova versao $updateVersion disponivel", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    Text("Voce esta usando $APP_VERSION.", style = MaterialTheme.typography.bodyMedium)
+                    Text("Baixe o novo instalador (.exe) e reinstale em cima da versao atual.", style = MaterialTheme.typography.bodyMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(onClick = { UpdateCheck.openDownloadPage() }) { Text("Abrir download") }
+                        OutlinedButton(onClick = { updateVersion = "" }) { Text("Depois") }
+                    }
+                }
+            }
         }
     }
 
@@ -167,7 +257,7 @@ fun DesktopApp() {
             if (s == null) {
                 screen = DScreen.Login
             } else {
-                DesktopShell(s, epgIndex, onLogout = {
+                DesktopShell(s, epgIndex, onCheckUpdate = checkUpdate, onLogout = {
                     DesktopPrefs.remove("xtream_host"); DesktopPrefs.remove("xtream_user"); DesktopPrefs.remove("xtream_pass")
                     session = null
                     screen = DScreen.Login
@@ -212,7 +302,12 @@ private fun LoginUi(error: String, loading: Boolean, onLogin: (String, String, S
 }
 
 @Composable
-private fun DesktopShell(session: DSession, epgIndex: Map<String, List<br.archplayer.core.xmltv.XmltvProgramme>>, onLogout: () -> Unit) {
+private fun DesktopShell(
+    session: DSession,
+    epgIndex: Map<String, List<br.archplayer.core.xmltv.XmltvProgramme>>,
+    onCheckUpdate: () -> Unit,
+    onLogout: () -> Unit
+) {
     var tab by remember { mutableStateOf(DTab.LIVE) }
     Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(Modifier.width(200.dp).fillMaxHeight().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -233,7 +328,7 @@ private fun DesktopShell(session: DSession, epgIndex: Map<String, List<br.archpl
                 DTab.LIVE -> DesktopLive(session, epgIndex)
                 DTab.MOVIES -> DesktopVod(session)
                 DTab.SERIES -> DesktopSeries(session)
-                DTab.SETTINGS -> DesktopSettings(session)
+                DTab.SETTINGS -> DesktopSettings(session, onCheckUpdate)
             }
         }
     }
@@ -430,7 +525,7 @@ private fun DesktopSeries(session: DSession) {
 }
 
 @Composable
-private fun DesktopSettings(session: DSession) {
+private fun DesktopSettings(session: DSession, onCheckUpdate: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(8.dp)) {
         Text("Conta", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         Text("Servidor: ${session.creds.host}", style = MaterialTheme.typography.bodyMedium)
@@ -440,7 +535,20 @@ private fun DesktopSettings(session: DSession) {
             Text("Expira em: ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm").format(java.util.Date(it * 1000))}", style = MaterialTheme.typography.bodyMedium)
         }
         Text(
-            "Reproducao: live/movie/series abrem no mpv (recomendado) ou no player padrao do sistema.",
+            "Reproducao: live/movie/series abrem no mpv (recomendado), VLC ou Windows Media Player.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            "Versao: $APP_VERSION",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = onCheckUpdate) { Text("Verificar atualizacoes") }
+            OutlinedButton(onClick = { UpdateCheck.openDownloadPage() }) { Text("Baixar nova versao") }
+        }
+        Text(
+            "Dica: para os melhores codecs, instale o VLC (videolan.org) ou o mpv (mpv.io).",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -46,10 +46,10 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p dist
-          cp androidApp/build/outputs/apk/debug/androidApp-debug.apk dist/ArchPlayer-1.3.0-android-debug.apk
-          cp desktop/build/compose/jars/ArchPlayer-*.jar dist/ArchPlayer-1.3.0-desktop.jar
-          cp build/ArchPlayer-tizen.wgt dist/ArchPlayer-1.3.0-tizen.wgt
-          cp build/ArchPlayer-webos-unpacked.zip dist/ArchPlayer-1.3.0-webos.zip
+          cp androidApp/build/outputs/apk/debug/androidApp-debug.apk dist/ArchPlayer-1.4.0-android-debug.apk
+          cp desktop/build/compose/jars/ArchPlayer-*.jar dist/ArchPlayer-1.4.0-desktop.jar
+          cp build/ArchPlayer-tizen.wgt dist/ArchPlayer-1.4.0-tizen.wgt
+          cp build/ArchPlayer-webos-unpacked.zip dist/ArchPlayer-1.4.0-webos.zip
 
       - name: Create release
         uses: softprops/action-gh-release@v2
