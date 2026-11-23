@@ -46,10 +46,10 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p dist
-          cp androidApp/build/outputs/apk/debug/androidApp-debug.apk dist/ArchPlayer-1.5.0-android-debug.apk
-          cp desktop/build/compose/jars/ArchPlayer-*.jar dist/ArchPlayer-1.5.0-desktop.jar
-          cp build/ArchPlayer-tizen.wgt dist/ArchPlayer-1.5.0-tizen.wgt
-          cp build/ArchPlayer-webos-unpacked.zip dist/ArchPlayer-1.5.0-webos.zip
+          cp androidApp/build/outputs/apk/debug/androidApp-debug.apk dist/ArchPlayer-1.5.1-android-debug.apk
+          cp desktop/build/compose/jars/ArchPlayer-*.jar dist/ArchPlayer-1.5.1-desktop.jar
+          cp build/ArchPlayer-tizen.wgt dist/ArchPlayer-1.5.1-tizen.wgt
+          cp build/ArchPlayer-webos-unpacked.zip dist/ArchPlayer-1.5.1-webos.zip
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -76,12 +76,24 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Build Windows installer
+      - name: Build Windows MSI installer
+        run: gradle :desktop:packageMsi --no-daemon
+
+      - name: Build Windows EXE installer
         run: gradle :desktop:packageExe --no-daemon
 
-      - name: Collect artifact
+      - name: Build portable ZIP (sem instalacao)
         shell: pwsh
-        run: New-Item -ItemType Directory -Force dist | Out-Null; Copy-Item desktop/build/compose/binaries/main/exe/* dist/
+        run: |
+          gradle :desktop:createDistributable --no-daemon
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path desktop/build/compose/binaries/main/app/ArchPlayer -DestinationPath dist/ArchPlayer-1.5.1-windows-portable.zip -Force
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          Copy-Item desktop/build/compose/binaries/main/exe/* dist/
+          Copy-Item desktop/build/compose/binaries/main/msi/* dist/
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2

@@ -45,13 +45,14 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Exe, TargetFormat.Msi)
             packageName = "ArchPlayer"
-            packageVersion = "1.5.0"
-            modules("java.naming", "java.management")
+            packageVersion = "1.5.1"
+            includeAllModules = true
             vendor = "ArchPlayer"
             windows {
                 menu = true
                 shortcut = true
                 dirChooser = true
+                perUserInstall = true
                 upgradeUuid = "5d5e8f2a-7c9b-4a60-9ad1-1f3a4d5b6c70"
             }
         }

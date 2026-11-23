@@ -61,7 +61,7 @@ object DesktopPrefs {
     fun remove(key: String) = node.remove(key)
 }
 
-const val APP_VERSION = "1.5.0"
+const val APP_VERSION = "1.5.1"
 
 object UpdateCheck {
     private const val API = "https://api.github.com/repos/Astaroth0c/archplayer/releases/latest"
