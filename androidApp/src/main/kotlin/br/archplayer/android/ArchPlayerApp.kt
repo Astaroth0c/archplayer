@@ -63,7 +63,6 @@ enum class MainTab(val label: String) {
     LIVE("TV ao vivo"),
     MOVIES("Filmes"),
     SERIES("Séries"),
-    TVBOX("TVBox"),
     SETTINGS("Config")
 }
 
@@ -174,7 +173,6 @@ fun ArchPlayerApp() {
                 config = config,
                 prefs = prefs,
                 onPlay = openPlayer,
-                onConfigLoaded = { config = it },
                 onLogout = {
                     prefs.edit().remove("xtream_host").remove("xtream_user").remove("xtream_pass").apply()
                     session = null
@@ -238,7 +236,6 @@ private fun MainShell(
     config: TvBoxConfig?,
     prefs: SharedPreferences,
     onPlay: (String, String?) -> Unit,
-    onConfigLoaded: (TvBoxConfig) -> Unit,
     onLogout: () -> Unit
 ) {
     var tab by remember { mutableStateOf(MainTab.LIVE) }
@@ -257,7 +254,6 @@ private fun MainShell(
                                 MainTab.LIVE -> Icon(Icons.Filled.LiveTv, contentDescription = item.label)
                                 MainTab.MOVIES -> Icon(Icons.Filled.Movie, contentDescription = item.label)
                                 MainTab.SERIES -> Icon(Icons.Filled.Tv, contentDescription = item.label)
-                                MainTab.TVBOX -> Icon(Icons.Filled.VideoLibrary, contentDescription = item.label)
                                 MainTab.SETTINGS -> Icon(Icons.Filled.Settings, contentDescription = item.label)
                             }
                         },
@@ -277,13 +273,9 @@ private fun MainShell(
                 )
                 MainTab.MOVIES -> MoviesScreen(client = session.client, onPlay = onPlay)
                 MainTab.SERIES -> SeriesScreen(client = session.client, onPlay = onPlay)
-                MainTab.TVBOX -> SourcesScreen(config = config, onPlay = onPlay)
                 MainTab.SETTINGS -> SettingsScreen(
                     userInfo = session.userInfo,
-                    prefs = prefs,
-                    config = config,
                     activity = activity,
-                    onConfigLoaded = onConfigLoaded,
                     onLogout = onLogout
                 )
             }

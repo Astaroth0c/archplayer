@@ -61,7 +61,7 @@ object DesktopPrefs {
     fun remove(key: String) = node.remove(key)
 }
 
-const val APP_VERSION = "1.6.0"
+const val APP_VERSION = "1.7.0"
 
 object UpdateCheck {
     private const val API = "https://api.github.com/repos/Astaroth0c/archplayer/releases/latest"
@@ -165,24 +165,33 @@ fun main() {
     Diag.install()
     try {
         application {
-        Window(
-            onCloseRequest = ::exitApplication,
-            title = "ArchPlayer",
-            state = rememberWindowState(width = 1200.dp, height = 800.dp)
-        ) {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    primary = Color(0xFF4C8DFF),
-                    background = Color(0xFF0B0E13),
-                    surface = Color(0xFF11151F),
-                    surfaceVariant = Color(0xFF1A2233),
-                    onSurfaceVariant = Color(0xFF9AA7BD),
-                    error = Color(0xFFFF6B6B)
-                )
+            // playUrl precisa viver no escopo do application: janelas irmas (top-level),
+            // nunca aninhadas dentro do conteudo de outra Window.
+            var playUrl by remember { mutableStateOf<DPlay?>(null) }
+            Window(
+                onCloseRequest = ::exitApplication,
+                title = "ArchPlayer",
+                state = rememberWindowState(width = 1200.dp, height = 800.dp)
             ) {
-                DesktopApp()
+                MaterialTheme(
+                    colorScheme = darkColorScheme(
+                        primary = Color(0xFF4C8DFF),
+                        background = Color(0xFF0B0E13),
+                        surface = Color(0xFF11151F),
+                        surfaceVariant = Color(0xFF1A2233),
+                        onSurfaceVariant = Color(0xFF9AA7BD),
+                        error = Color(0xFFFF6B6B)
+                    )
+                ) {
+                    DesktopApp(onPlay = { url, _ ->
+                        Diag.log("onPlay url=$url")
+                        playUrl = DPlay(url)
+                    })
+                }
             }
-        }
+            playUrl?.let { p ->
+                PlayerWindow(play = p, onClose = { playUrl = null })
+            }
         }
     } catch (t: Throwable) {
         Diag.fatalDialog(t)
@@ -194,14 +203,13 @@ private enum class DScreen { Splash, Login, Main }
 private enum class DTab(val label: String) { LIVE("TV ao vivo"), MOVIES("Filmes"), SERIES("Séries"), SETTINGS("Config") }
 
 @Composable
-fun DesktopApp() {
+fun DesktopApp(onPlay: (String, String?) -> Unit) {
     var screen by remember { mutableStateOf(DScreen.Splash) }
     var session by remember { mutableStateOf<DSession?>(null) }
     var loggingIn by remember { mutableStateOf(false) }
     var loginError by remember { mutableStateOf("") }
     var epgIndex by remember { mutableStateOf(emptyMap<String, List<br.archplayer.core.xmltv.XmltvProgramme>>()) }
     var updateVersion by remember { mutableStateOf("") }
-    var playUrl by remember { mutableStateOf<DPlay?>(null) }
     var splashStep by remember { mutableStateOf("Iniciando...") }
     val scope = rememberCoroutineScope()
 
@@ -294,10 +302,6 @@ fun DesktopApp() {
         }
     }
 
-    playUrl?.let { p ->
-        PlayerWindow(play = p, onClose = { playUrl = null })
-    }
-
     when (screen) {
         DScreen.Splash -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -313,7 +317,7 @@ fun DesktopApp() {
             if (s == null) {
                 screen = DScreen.Login
             } else {
-                DesktopShell(s, epgIndex, onPlay = { url, _ -> playUrl = DPlay(url) }, onCheckUpdate = checkUpdate, onLogout = {
+                DesktopShell(s, epgIndex, onPlay = onPlay, onCheckUpdate = checkUpdate, onLogout = {
                     DesktopPrefs.remove("xtream_host"); DesktopPrefs.remove("xtream_user"); DesktopPrefs.remove("xtream_pass")
                     session = null
                     screen = DScreen.Login
@@ -406,7 +410,9 @@ private fun DesktopLive(
     fun load(categoryId: String?) {
         loading = true
         scope.launch {
-            streams = runCatching { withContext(Dispatchers.IO) { client.liveStreams(categoryId) } }.getOrDefault(emptyList())
+            val result = runCatching { withContext(Dispatchers.IO) { client.liveStreams(categoryId) } }
+            streams = result.getOrDefault(emptyList())
+            Diag.log("liveStreams cat=$categoryId -> ${streams.size} canais" + (result.exceptionOrNull()?.let { " ERRO: ${it.message}" } ?: ""))
             loading = false
         }
     }
@@ -437,7 +443,10 @@ private fun DesktopLive(
                 val nowSlot = nowNext.now
                 Column(
                     Modifier.fillMaxWidth().clickable {
-                        ch.streamId?.let { id -> onPlay(client.streamUrl(XtreamStreamKind.LIVE, id, "m3u8"), null) }
+                        ch.streamId?.let { id ->
+                            Diag.log("click canal id=$id nome=${ch.name}")
+                            onPlay(client.streamUrl(XtreamStreamKind.LIVE, id, "m3u8"), null)
+                        }
                     }.padding(vertical = 6.dp)
                 ) {
                     Text(name, style = MaterialTheme.typography.bodyLarge)

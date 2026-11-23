@@ -43,6 +43,7 @@ fun PlayerWindow(play: DPlay, onClose: () -> Unit) {
     val engine = remember(play.url) { VideoEngine(play.url) }
 
     LaunchedEffect(play.url) {
+        Diag.log("player window aberto url=${play.url}")
         engine.start(
             onFrame = { img -> frame = img },
             onStatus = { status = it },

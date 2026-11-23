@@ -36,16 +36,9 @@ import java.util.Locale
 @Composable
 fun SettingsScreen(
     userInfo: XtreamUserInfo?,
-    prefs: SharedPreferences,
-    config: TvBoxConfig?,
     activity: Activity,
-    onConfigLoaded: (TvBoxConfig) -> Unit,
     onLogout: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-    var configUrl by remember { mutableStateOf(prefs.getString("config_url", "") ?: "") }
-    var status by remember { mutableStateOf("") }
-    var loadingConfig by remember { mutableStateOf(false) }
     val fmt = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
 
     Column(
@@ -70,55 +63,6 @@ fun SettingsScreen(
                 }
             }
         } ?: Text("Login via portal nao configurado.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-        Text("Interface TVBox", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-        OutlinedTextField(
-            value = configUrl,
-            onValueChange = { configUrl = it },
-            label = { Text("URL da interface (JSON)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = {
-                    if (configUrl.isBlank()) {
-                        status = "Informe a URL da interface."
-                        return@Button
-                    }
-                    loadingConfig = true
-                    status = ""
-                    scope.launch {
-                        val loaded = runCatching { loadTvBoxConfig(configUrl.trim()) }
-                            .onSuccess {
-                                prefs.edit().putString("config_url", configUrl.trim()).apply()
-                                onConfigLoaded(it)
-                                status = "Interface carregada: ${it.sites.size} fontes, ${it.lives.size} lives"
-                            }
-                            .onFailure { status = "Erro: ${it.message}" }
-                        loadingConfig = false
-                    }
-                },
-                enabled = !loadingConfig
-            ) {
-                Text(if (loadingConfig) "Carregando..." else "Carregar")
-            }
-            OutlinedButton(
-                onClick = {
-                    prefs.edit().remove("config_url").apply()
-                    configUrl = ""
-                    onConfigLoaded(TvBoxConfig())
-                    status = "Interface removida."
-                }
-            ) { Text("Limpar") }
-        }
-        config?.let {
-            Text(
-                "Atual: ${it.sites.size} fontes (TVBox), ${it.lives.size} listas ao vivo",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
 
         Text("Atualizacao", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -145,8 +89,5 @@ fun SettingsScreen(
             Text("Sair da conta")
         }
 
-        if (status.isNotEmpty()) {
-            Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-        }
     }
 }
