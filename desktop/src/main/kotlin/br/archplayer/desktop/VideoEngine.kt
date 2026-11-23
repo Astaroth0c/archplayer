@@ -29,19 +29,44 @@ class VideoEngine(private val url: String) {
         onFailure: (String) -> Unit
     ) {
         Thread {
-            avutil.av_log_set_level(avutil.AV_LOG_ERROR)
-            val grabber = FFmpegFrameGrabber(url)
-            val opened = runCatching {
-                grabber.setOption("user_agent", "ArchPlayer/$APP_VERSION")
-                grabber.setOption("reconnect", "1")
-                grabber.setOption("reconnect_streamed", "1")
-                grabber.setOption("rw_timeout", "15000000")
-                grabber.start()
-            }.isSuccess
-            if (!opened) {
-                onFailure("Falha ao abrir o stream. Verifique a internet ou use 'Player externo'.")
-                return@Thread
+            try {
+                runLoop(onFrame, onStatus, onFailure)
+            } catch (t: Throwable) {
+                Diag.log("motor CRASH: ${t::class.simpleName}: ${t.message}")
+                onFailure("Erro interno do motor: ${t::class.simpleName}. Veja ${System.getProperty("user.home")}/archplayer.error.log")
             }
+        }.apply {
+            name = "arch-video"
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun runLoop(
+        onFrame: (BufferedImage) -> Unit,
+        onStatus: (String) -> Unit,
+        onFailure: (String) -> Unit
+    ) {
+        runCatching { avutil.av_log_set_level(avutil.AV_LOG_ERROR) }
+        val grabber: FFmpegFrameGrabber = try {
+            FFmpegFrameGrabber(url)
+        } catch (t: Throwable) {
+            Diag.log("FFmpeg nativo nao carregou: ${t::class.simpleName}: ${t.message}")
+            onFailure("Nao foi possivel carregar o motor de video (FFmpeg). Use 'Player externo' ou consulte o log.")
+            return
+        }
+        val opened = runCatching {
+            grabber.setOption("user_agent", "ArchPlayer/$APP_VERSION")
+            grabber.setOption("reconnect", "1")
+            grabber.setOption("reconnect_streamed", "1")
+            grabber.setOption("rw_timeout", "15000000")
+            grabber.start()
+        }.isSuccess
+        Diag.log("grabber.start ok=$opened url=$url")
+        if (!opened) {
+            onFailure("Falha ao abrir o stream. Verifique a internet ou use 'Player externo'.")
+            return
+        }
             onStatus(
                 "Fonte: ${grabber.imageWidth}x${grabber.imageHeight} @ ${grabber.frameRate.toInt()}fps " +
                     "| audio ${grabber.sampleRate}Hz ${grabber.audioChannels}ch"
@@ -82,13 +107,8 @@ class VideoEngine(private val url: String) {
                     }
                 }
             }
-            runCatching { line?.stop(); line?.close() }
-            runCatching { grabber.stop(); grabber.release() }
-        }.apply {
-            name = "arch-video"
-            isDaemon = true
-            start()
-        }
+        runCatching { line?.stop(); line?.close() }
+        runCatching { grabber.stop(); grabber.release() }
     }
 
     private fun writeSamples(samples: Array<java.nio.Buffer>?, line: javax.sound.sampled.SourceDataLine?) {

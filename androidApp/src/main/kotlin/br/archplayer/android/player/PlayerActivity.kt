@@ -37,6 +37,7 @@ class PlayerActivity : ComponentActivity() {
 
     private var player: ExoPlayer? = null
     private lateinit var playerView: PlayerView
+    private lateinit var sideBar: LinearLayout
     private var playUrl: String = ""
     private var userAgent: String = USER_AGENT
 
@@ -47,6 +48,11 @@ class PlayerActivity : ComponentActivity() {
         onWindowFocusChanged(true)
         playerView = PlayerView(this)
         setContentView(buildOverlay())
+        playerView.setControllerVisibilityListener(object : PlayerView.ControllerVisibilityListener {
+            override fun onVisibilityChanged(visibility: Int) {
+                runCatching { sideBar.visibility = visibility }
+            }
+        })
         openStream(intent)
     }
 
@@ -123,7 +129,7 @@ class PlayerActivity : ComponentActivity() {
         playerView.controllerShowTimeoutMs = 4500
         playerView.setFullscreenButtonClickListener { toggleExternal() }
 
-        val bar = LinearLayout(this).apply {
+        sideBar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(8, 8, 8, 8)
         }
@@ -140,7 +146,7 @@ class PlayerActivity : ComponentActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = 8 }
-            bar.addView(tv, wrap)
+            sideBar.addView(tv, wrap)
         }
         addBtn("\u266A \u00c1udio") { showTrackDialog(C.TRACK_TYPE_AUDIO, "Faixas de \u00e1udio") }
         addBtn("\u2261 Legendas") { showTrackDialog(C.TRACK_TYPE_TEXT, "Legendas") }
@@ -154,7 +160,7 @@ class PlayerActivity : ComponentActivity() {
         ).apply {
             gravity = android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
         }
-        root.addView(bar, barParams)
+        root.addView(sideBar, barParams)
         return root
     }
 

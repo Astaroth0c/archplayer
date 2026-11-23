@@ -61,7 +61,7 @@ object DesktopPrefs {
     fun remove(key: String) = node.remove(key)
 }
 
-const val APP_VERSION = "1.5.3"
+const val APP_VERSION = "1.6.0"
 
 object UpdateCheck {
     private const val API = "https://api.github.com/repos/Astaroth0c/archplayer/releases/latest"
@@ -378,7 +378,6 @@ private fun DesktopShell(
             }
             Spacer(Modifier.size(24.dp))
             OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text("Sair da conta") }
-            Text("mpv recomendado para playback.\nURL aberta no player padrao caso mpv nao esteja instalado.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Box(Modifier.weight(1f).fillMaxHeight().padding(12.dp)) {
             when (tab) {

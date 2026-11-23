@@ -22,6 +22,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
@@ -53,6 +55,15 @@ fun PlayerWindow(play: DPlay, onClose: () -> Unit) {
 
     val painter = remember(frame) { frame?.let { BitmapPainter(it.toComposeImageBitmap()) } }
 
+    var controls by remember(play.url) { mutableStateOf(true) }
+    var interactions by remember(play.url) { mutableStateOf(0) }
+    LaunchedEffect(controls, interactions, play.url) {
+        if (controls) {
+            kotlinx.coroutines.delay(4500)
+            controls = false
+        }
+    }
+
     Window(
         onCloseRequest = { engine.stopped = true; onClose() },
         title = "ArchPlayer - reproduzindo",
@@ -62,6 +73,17 @@ fun PlayerWindow(play: DPlay, onClose: () -> Unit) {
             Modifier
                 .fillMaxSize()
                 .background(Color.Black)
+                .pointerInput(play.url) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            when (event.type) {
+                                PointerEventType.Press -> controls = !controls
+                                PointerEventType.Move -> interactions++
+                            }
+                        }
+                    }
+                }
         ) {
             if (painter != null) {
                 Image(
@@ -69,6 +91,12 @@ fun PlayerWindow(play: DPlay, onClose: () -> Unit) {
                     contentDescription = "video",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit
+                )
+                Text(
+                    "v$APP_VERSION - motor FFmpeg",
+                    color = Color.White.copy(alpha = 0.5f),
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
                 )
             }
             if (painter == null && error.isEmpty()) {
@@ -94,14 +122,16 @@ fun PlayerWindow(play: DPlay, onClose: () -> Unit) {
                     }
                 }
             }
-            Row(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(onClick = { openExternal(play.url) }) { Text("Abrir externo") }
-                OutlinedButton(onClick = { engine.stopped = true; onClose() }) { Text("Fechar") }
+            if (controls) {
+                Row(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(onClick = { openExternal(play.url) }) { Text("Abrir externo") }
+                    OutlinedButton(onClick = { engine.stopped = true; onClose() }) { Text("Fechar") }
+                }
             }
         }
     }
