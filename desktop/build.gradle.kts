@@ -45,7 +45,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Exe, TargetFormat.Msi)
             packageName = "ArchPlayer"
-            packageVersion = "1.5.1"
+            packageVersion = "1.5.2"
             includeAllModules = true
             vendor = "ArchPlayer"
             windows {

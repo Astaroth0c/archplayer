@@ -46,10 +46,10 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p dist
-          cp androidApp/build/outputs/apk/debug/androidApp-debug.apk dist/ArchPlayer-1.5.1-android-debug.apk
-          cp desktop/build/compose/jars/ArchPlayer-*.jar dist/ArchPlayer-1.5.1-desktop.jar
-          cp build/ArchPlayer-tizen.wgt dist/ArchPlayer-1.5.1-tizen.wgt
-          cp build/ArchPlayer-webos-unpacked.zip dist/ArchPlayer-1.5.1-webos.zip
+          cp androidApp/build/outputs/apk/debug/androidApp-debug.apk dist/ArchPlayer-1.5.2-android-debug.apk
+          cp desktop/build/compose/jars/ArchPlayer-*.jar dist/ArchPlayer-1.5.2-desktop.jar
+          cp build/ArchPlayer-tizen.wgt dist/ArchPlayer-1.5.2-tizen.wgt
+          cp build/ArchPlayer-webos-unpacked.zip dist/ArchPlayer-1.5.2-webos.zip
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -87,7 +87,7 @@ jobs:
         run: |
           gradle :desktop:createDistributable --no-daemon
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path desktop/build/compose/binaries/main/app/ArchPlayer -DestinationPath dist/ArchPlayer-1.5.1-windows-portable.zip -Force
+          Compress-Archive -Path desktop/build/compose/binaries/main/app/ArchPlayer -DestinationPath dist/ArchPlayer-1.5.2-windows-portable.zip -Force
 
       - name: Collect artifacts
         shell: pwsh

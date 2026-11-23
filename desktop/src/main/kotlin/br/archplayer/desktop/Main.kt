@@ -61,7 +61,7 @@ object DesktopPrefs {
     fun remove(key: String) = node.remove(key)
 }
 
-const val APP_VERSION = "1.5.1"
+const val APP_VERSION = "1.5.2"
 
 object UpdateCheck {
     private const val API = "https://api.github.com/repos/Astaroth0c/archplayer/releases/latest"
@@ -131,25 +131,63 @@ fun openExternal(url: String) {
 
 class DSession(val client: XtreamClient, val creds: XtreamCredentials, val status: String?, val expDate: String?)
 
-fun main() = application {
-    Window(
-        onCloseRequest = ::exitApplication,
-        title = "ArchPlayer",
-        state = rememberWindowState(width = 1200.dp, height = 800.dp)
-    ) {
-        MaterialTheme(
-            colorScheme = darkColorScheme(
-                primary = Color(0xFF4C8DFF),
-                background = Color(0xFF0B0E13),
-                surface = Color(0xFF11151F),
-                surfaceVariant = Color(0xFF1A2233),
-                onSurfaceVariant = Color(0xFF9AA7BD),
-                error = Color(0xFFFF6B6B)
-            )
-        ) {
-            DesktopApp()
+object Diag {
+    private fun logFile(): String =(System.getProperty("user.home") ?: ".") + "/archplayer.error.log"
+
+    fun log(what: String) {
+        runCatching {
+            val f = java.io.File(logFile())
+            f.appendText("[${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date())}] $APP_VERSION $what\n")
         }
     }
+
+    fun install() {
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            log("thread ${t.name} CRASH: ${e::class.simpleName}: ${e.message}")
+            e.stackTraceToString().take(4000).let { runCatching { java.io.File(logFile()).appendText(it + "\n") } }
+        }
+    }
+
+    fun fatalDialog(e: Throwable) {
+        log("STARTUP FATAL: ${e::class.simpleName}: ${e.message}")
+        runCatching {
+            javax.swing.JOptionPane.showMessageDialog(
+                null,
+                "ArchPlayer nao conseguiu iniciar.\n\n${e.message}\n\nDetalhes salvos em: ${logFile()}",
+                "ArchPlayer",
+                javax.swing.JOptionPane.ERROR_MESSAGE
+            )
+        }
+    }
+}
+
+fun main() {
+    Diag.install()
+    try {
+        application {
+        Window(
+            onCloseRequest = ::exitApplication,
+            title = "ArchPlayer",
+            state = rememberWindowState(width = 1200.dp, height = 800.dp)
+        ) {
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    primary = Color(0xFF4C8DFF),
+                    background = Color(0xFF0B0E13),
+                    surface = Color(0xFF11151F),
+                    surfaceVariant = Color(0xFF1A2233),
+                    onSurfaceVariant = Color(0xFF9AA7BD),
+                    error = Color(0xFFFF6B6B)
+                )
+            ) {
+                DesktopApp()
+            }
+        }
+        }
+    } catch (t: Throwable) {
+        Diag.fatalDialog(t)
+    }
+
 }
 
 private enum class DScreen { Splash, Login, Main }
@@ -164,6 +202,7 @@ fun DesktopApp() {
     var epgIndex by remember { mutableStateOf(emptyMap<String, List<br.archplayer.core.xmltv.XmltvProgramme>>()) }
     var updateVersion by remember { mutableStateOf("") }
     var playUrl by remember { mutableStateOf<DPlay?>(null) }
+    var splashStep by remember { mutableStateOf("Iniciando...") }
     val scope = rememberCoroutineScope()
 
     val checkUpdate: () -> Unit = {
@@ -176,6 +215,7 @@ fun DesktopApp() {
     }
 
     fun doConnect(host: String, user: String, pass: String) {
+        Diag.log("doConnect host=$host user=$user")
         if (host.isBlank() || user.isBlank() || pass.isBlank()) {
             loginError = "Preencha host, usuario e senha."
             return
@@ -205,6 +245,7 @@ fun DesktopApp() {
                     if (idx.isNotEmpty()) epgIndex = idx
                 }.start()
             }.onFailure {
+                Diag.log("login falhou: ${it::class.simpleName}: ${it.message}")
                 loginError = it.message ?: "Falha na conexao"
             }
             loggingIn = false
@@ -212,19 +253,24 @@ fun DesktopApp() {
     }
 
     LaunchedEffect(Unit) {
+        Diag.log("app iniciado")
+        splashStep = "Verificando atualizacoes..."
         withContext(Dispatchers.IO) {
             val latest = runCatching { UpdateCheck.latestVersion() }.getOrNull()
             if (latest != null && UpdateCheck.isNewer(latest, APP_VERSION)) {
                 updateVersion = latest
             }
         }
+        splashStep = "Carregando..."
         kotlinx.coroutines.delay(1400)
         val h = DesktopPrefs.get("xtream_host")
         val u = DesktopPrefs.get("xtream_user")
         val p = DesktopPrefs.get("xtream_pass")
         if (h.isBlank() || u.isBlank() || p.isBlank()) {
+            splashStep = "Informe seus dados"
             screen = DScreen.Login
         } else {
+            splashStep = "Conectando ao portal..."
             doConnect(h, u, p)
         }
     }
@@ -253,7 +299,9 @@ fun DesktopApp() {
         DScreen.Splash -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ArchPlayer", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
+                Text("v$APP_VERSION", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 CircularProgressIndicator()
+                Text(splashStep, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         DScreen.Login -> LoginUi(loginError, loggingIn, ::doConnect)
