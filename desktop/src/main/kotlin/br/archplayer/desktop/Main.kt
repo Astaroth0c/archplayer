@@ -61,7 +61,7 @@ object DesktopPrefs {
     fun remove(key: String) = node.remove(key)
 }
 
-const val APP_VERSION = "1.5.2"
+const val APP_VERSION = "1.5.3"
 
 object UpdateCheck {
     private const val API = "https://api.github.com/repos/Astaroth0c/archplayer/releases/latest"
@@ -247,6 +247,9 @@ fun DesktopApp() {
             }.onFailure {
                 Diag.log("login falhou: ${it::class.simpleName}: ${it.message}")
                 loginError = it.message ?: "Falha na conexao"
+                // credencial invalida/expirada: volta para o login e nao guarda mais a senha falha
+                DesktopPrefs.remove("xtream_pass")
+                screen = DScreen.Login
             }
             loggingIn = false
         }

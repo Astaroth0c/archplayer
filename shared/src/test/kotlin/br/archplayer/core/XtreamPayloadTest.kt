@@ -22,8 +22,8 @@ class XtreamPayloadTest {
     private val xuiPayload = """
         {
           "user_info": {
-            "username": "55718733",
-            "password": "48659005",
+            "username": "usuario_teste",
+            "password": "senha_teste",
             "message": "Welcome to XUI.one",
             "auth": 1,
             "status": "Active",
