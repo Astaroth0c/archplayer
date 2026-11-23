@@ -61,7 +61,7 @@ object DesktopPrefs {
     fun remove(key: String) = node.remove(key)
 }
 
-const val APP_VERSION = "1.4.0"
+const val APP_VERSION = "1.5.0"
 
 object UpdateCheck {
     private const val API = "https://api.github.com/repos/Astaroth0c/archplayer/releases/latest"
@@ -163,6 +163,7 @@ fun DesktopApp() {
     var loginError by remember { mutableStateOf("") }
     var epgIndex by remember { mutableStateOf(emptyMap<String, List<br.archplayer.core.xmltv.XmltvProgramme>>()) }
     var updateVersion by remember { mutableStateOf("") }
+    var playUrl by remember { mutableStateOf<DPlay?>(null) }
     val scope = rememberCoroutineScope()
 
     val checkUpdate: () -> Unit = {
@@ -244,6 +245,10 @@ fun DesktopApp() {
         }
     }
 
+    playUrl?.let { p ->
+        PlayerWindow(play = p, onClose = { playUrl = null })
+    }
+
     when (screen) {
         DScreen.Splash -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -257,7 +262,7 @@ fun DesktopApp() {
             if (s == null) {
                 screen = DScreen.Login
             } else {
-                DesktopShell(s, epgIndex, onCheckUpdate = checkUpdate, onLogout = {
+                DesktopShell(s, epgIndex, onPlay = { url, _ -> playUrl = DPlay(url) }, onCheckUpdate = checkUpdate, onLogout = {
                     DesktopPrefs.remove("xtream_host"); DesktopPrefs.remove("xtream_user"); DesktopPrefs.remove("xtream_pass")
                     session = null
                     screen = DScreen.Login
@@ -305,6 +310,7 @@ private fun LoginUi(error: String, loading: Boolean, onLogin: (String, String, S
 private fun DesktopShell(
     session: DSession,
     epgIndex: Map<String, List<br.archplayer.core.xmltv.XmltvProgramme>>,
+    onPlay: (String, String?) -> Unit,
     onCheckUpdate: () -> Unit,
     onLogout: () -> Unit
 ) {
@@ -325,9 +331,9 @@ private fun DesktopShell(
         }
         Box(Modifier.weight(1f).fillMaxHeight().padding(12.dp)) {
             when (tab) {
-                DTab.LIVE -> DesktopLive(session, epgIndex)
-                DTab.MOVIES -> DesktopVod(session)
-                DTab.SERIES -> DesktopSeries(session)
+                DTab.LIVE -> DesktopLive(session, epgIndex, onPlay)
+                DTab.MOVIES -> DesktopVod(session, onPlay)
+                DTab.SERIES -> DesktopSeries(session, onPlay)
                 DTab.SETTINGS -> DesktopSettings(session, onCheckUpdate)
             }
         }
@@ -335,7 +341,11 @@ private fun DesktopShell(
 }
 
 @Composable
-private fun DesktopLive(session: DSession, epgIndex: Map<String, List<br.archplayer.core.xmltv.XmltvProgramme>>) {
+private fun DesktopLive(
+    session: DSession,
+    epgIndex: Map<String, List<br.archplayer.core.xmltv.XmltvProgramme>>,
+    onPlay: (String, String?) -> Unit
+) {
     val client = session.client
     var categories by remember { mutableStateOf(listOf<XtreamCategory>()) }
     var selected by remember { mutableStateOf<String?>(null) }
@@ -377,7 +387,7 @@ private fun DesktopLive(session: DSession, epgIndex: Map<String, List<br.archpla
                 val nowSlot = nowNext.now
                 Column(
                     Modifier.fillMaxWidth().clickable {
-                        ch.streamId?.let { id -> openExternal(client.streamUrl(XtreamStreamKind.LIVE, id)) }
+                        ch.streamId?.let { id -> onPlay(client.streamUrl(XtreamStreamKind.LIVE, id, "m3u8"), null) }
                     }.padding(vertical = 6.dp)
                 ) {
                     Text(name, style = MaterialTheme.typography.bodyLarge)
@@ -391,7 +401,7 @@ private fun DesktopLive(session: DSession, epgIndex: Map<String, List<br.archpla
 }
 
 @Composable
-private fun DesktopVod(session: DSession) {
+private fun DesktopVod(session: DSession, onPlay: (String, String?) -> Unit) {
     val client = session.client
     var categories by remember { mutableStateOf(listOf<XtreamCategory>()) }
     var selected by remember { mutableStateOf<String?>(null) }
@@ -430,7 +440,7 @@ private fun DesktopVod(session: DSession) {
                 Row(
                     Modifier.fillMaxWidth().clickable {
                         movie.streamId?.let { id ->
-                            openExternal(client.streamUrl(XtreamStreamKind.VOD, id, movie.containerExtension))
+                            onPlay(client.streamUrl(XtreamStreamKind.VOD, id, movie.containerExtension), null)
                         }
                     }.padding(vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -446,7 +456,7 @@ private fun DesktopVod(session: DSession) {
 }
 
 @Composable
-private fun DesktopSeries(session: DSession) {
+private fun DesktopSeries(session: DSession, onPlay: (String, String?) -> Unit) {
     val client = session.client
     var categories by remember { mutableStateOf(listOf<XtreamCategory>()) }
     var selectedCat by remember { mutableStateOf<String?>(null) }
@@ -511,7 +521,7 @@ private fun DesktopSeries(session: DSession) {
                                 "E${ep.episodeNum ?: "?"} - ${ep.title ?: "Episodio"}",
                                 modifier = Modifier.fillMaxWidth().clickable {
                                     ep.id?.toIntOrNull()?.let { id ->
-                                        openExternal(client.streamUrl(XtreamStreamKind.SERIES, id, ep.containerExtension))
+                                        onPlay(client.streamUrl(XtreamStreamKind.SERIES, id, ep.containerExtension), null)
                                     }
                                 }.padding(vertical = 2.dp),
                                 style = MaterialTheme.typography.bodySmall
@@ -535,7 +545,7 @@ private fun DesktopSettings(session: DSession, onCheckUpdate: () -> Unit) {
             Text("Expira em: ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm").format(java.util.Date(it * 1000))}", style = MaterialTheme.typography.bodyMedium)
         }
         Text(
-            "Reproducao: live/movie/series abrem no mpv (recomendado), VLC ou Windows Media Player.",
+            "Reproducao usa o motor embutido (FFmpeg decodifica HLS/TS/H.264/H.265/AAC). Botao 'Abrir externo' manda para mpv/VLC/WMP.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

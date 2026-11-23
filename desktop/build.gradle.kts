@@ -18,6 +18,25 @@ dependencies {
     implementation(compose.material3)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
+    val osName = System.getProperty("os.name").lowercase()
+    val javacppClassifier = when {
+        osName.contains("win") -> "windows-x86_64"
+        osName.contains("mac") -> "macosx-x86_64"
+        else -> "linux-x86_64"
+    }
+    // Motor de video embutido: FFmpeg (demux, decode, resample) sem player externo
+    implementation("org.bytedeco:javacpp:1.5.10")
+    implementation("org.bytedeco:javacv:1.5.10")
+    implementation("org.bytedeco:ffmpeg:1.5.10")
+    runtimeOnly("org.bytedeco:ffmpeg:1.5.10:$javacppClassifier")
+
+    testImplementation(kotlin("test"))
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+    testLogging.events("passed", "failed")
 }
 
 compose.desktop {
@@ -26,7 +45,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Exe, TargetFormat.Msi)
             packageName = "ArchPlayer"
-            packageVersion = "1.4.0"
+            packageVersion = "1.5.0"
             modules("java.naming", "java.management")
             vendor = "ArchPlayer"
             windows {
